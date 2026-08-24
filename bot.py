@@ -35,10 +35,12 @@ from admin_handlers import (
     removemanga_cmd,
     editmanga_cmd,
     set_chapters_cmd,
+    syncchapters_cmd,
     addadmins_cmd,
     removeadmins_cmd,
     sudo_cmd,
 )
+from database import auto_sync_all_chapters
 from addmanga_handler import add_manga_cmd
 from broadcast_handler import broadcast_cmd, delete_broadcast_cmd
 from dmbroadcast_handler import dmbroadcast_cmd, delete_dmbroadcast_cmd
@@ -111,6 +113,9 @@ def main():
     # Start chapter buffer flusher in background
     threading.Thread(target=buffer_flusher, args=(updater.bot,), daemon=True, name="BufferFlusher").start()
 
+    # Automatically sync manga chapter counts on startup in background
+    threading.Thread(target=auto_sync_all_chapters, daemon=True, name="AutoChapterSync").start()
+
     # Register list manga pagination handlers
     register_listmanga_handlers(dp)
 
@@ -138,6 +143,8 @@ def main():
     dp.add_handler(CommandHandler("removemanga", removemanga_cmd))
     dp.add_handler(CommandHandler("editmanga", editmanga_cmd))
     dp.add_handler(CommandHandler("setchapters", set_chapters_cmd))
+    dp.add_handler(CommandHandler("syncchapters", syncchapters_cmd))
+    dp.add_handler(CommandHandler("autochapters", syncchapters_cmd))
     dp.add_handler(CommandHandler("addadmins", addadmins_cmd))
     dp.add_handler(CommandHandler("removeadmins", removeadmins_cmd))
     dp.add_handler(CommandHandler("sudo", sudo_cmd))

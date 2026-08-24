@@ -619,3 +619,52 @@ def get_manga_chapter_list(channel_id: int):
         return list(range(1, manga["total_chapters"] + 1))
 
     return [1]
+
+
+def auto_sync_all_chapters():
+    """Automatically scans posted_chapters and bookmarks to sync total_chapters for all manga."""
+    updated_count = 0
+    all_manga = list(manga_col.find())
+
+    for m in all_manga:
+        cid = m.get("channel_id")
+        if not cid:
+            continue
+
+        highest_chap = m.get("total_chapters", 0) or 0
+
+        # Check posted_chapters collection
+        posted_doc = posted_chapter_col.find_one({"channel_id": cid})
+        if posted_doc and posted_doc.get("chapters"):
+            for c in posted_doc["chapters"]:
+                try:
+                    c_int = int(c)
+                    if c_int > highest_chap:
+                        highest_chap = c_int
+                except (ValueError, TypeError):
+                    pass
+
+        # Check bookmarks
+        name = m.get("name", "")
+        if name:
+            bm_docs = list(bookmarks_col.find({"$or": [{"channel_id": cid}, {"manga": name}]}))
+            for b in bm_docs:
+                try:
+                    c_int = int(b.get("chapter", 0))
+                    if c_int > highest_chap:
+                        highest_chap = c_int
+                except (ValueError, TypeError):
+                    pass
+
+        if highest_chap > 0 and highest_chap != m.get("total_chapters"):
+            manga_col.update_one(
+                {"channel_id": cid},
+                {"$set": {"total_chapters": highest_chap}}
+            )
+            updated_count += 1
+
+    if updated_count > 0:
+        _invalidate_manga_cache()
+        logger.info(f"✅ Auto-synced total_chapters for {updated_count} manga titles in MongoDB!")
+
+    return updated_count

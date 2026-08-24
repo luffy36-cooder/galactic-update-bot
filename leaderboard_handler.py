@@ -26,6 +26,7 @@ def leaderboard_cmd(update: Update, context: CallbackContext):
 
     msg = "🏆 <b>Top Manga Readers Leaderboard</b> 🏆\n\n"
 
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     for i, entry in enumerate(leaderboard, start=1):
         uid = entry['_id']
         chapters = entry['chapters_read']
@@ -40,7 +41,9 @@ def leaderboard_cmd(update: Update, context: CallbackContext):
 
         safe_name = html.escape(display_name)
         link = f'<a href="tg://user?id={uid}">{safe_name}</a>'
-        msg += f"{i}. 👤 {link} — <b>{chapters}</b> chapters read\n"
+        medal = medals.get(i, f"<b>{i}.</b>")
+        unit = "chapter" if chapters == 1 else "chapters"
+        msg += f"{medal} 👤 {link} — <b>{chapters}</b> {unit} read\n"
 
     update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
 

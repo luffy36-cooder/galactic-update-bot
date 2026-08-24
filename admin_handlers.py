@@ -166,3 +166,24 @@ def sudo_cmd(update: Update, context: CallbackContext):
         parse_mode="HTML",
         disable_web_page_preview=True
     )
+
+
+# 🔄 /syncchapters or /autochapters — Automatically scan and update chapter counts for all manga
+def syncchapters_cmd(update: Update, context: CallbackContext):
+    if not is_admin(update.effective_user.id):
+        return update.message.reply_text("🚫 Sudo only.")
+
+    from database import auto_sync_all_chapters, manga_col
+    msg = update.message.reply_text("🔄 Auto-scanning all manga chapters from database...")
+
+    updated = auto_sync_all_chapters()
+    total_with_chaps = sum(1 for m in manga_col.find() if m.get("total_chapters", 0) > 0)
+    total_manga = manga_col.count_documents({})
+
+    msg.edit_text(
+        f"✅ <b>Chapter Auto-Sync Complete!</b>\n\n"
+        f"• Newly updated: <b>{updated}</b>\n"
+        f"• Manga with indexed chapters: <b>{total_with_chaps}/{total_manga}</b>\n\n"
+        f"<i>All manga in Web App & bot now have updated chapter counts.</i>",
+        parse_mode="HTML"
+    )
