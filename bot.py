@@ -53,6 +53,7 @@ from admin_handlers import (
     removeadmins_cmd,
     sudo_cmd,
     handle_forwarded_chapter,
+    scanallchannels_cmd,
 )
 from database import auto_sync_all_chapters
 from addmanga_handler import add_manga_cmd
@@ -159,6 +160,7 @@ def main():
     dp.add_handler(CommandHandler("setchapters", set_chapters_cmd))
     dp.add_handler(CommandHandler("syncchapters", syncchapters_cmd))
     dp.add_handler(CommandHandler("autochapters", syncchapters_cmd))
+    dp.add_handler(CommandHandler("scanallchannels", scanallchannels_cmd))
     dp.add_handler(CommandHandler("addadmins", addadmins_cmd))
     dp.add_handler(CommandHandler("removeadmins", removeadmins_cmd))
     dp.add_handler(CommandHandler("sudo", sudo_cmd))

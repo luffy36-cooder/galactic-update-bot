@@ -244,3 +244,68 @@ def handle_forwarded_chapter(update: Update, context: CallbackContext):
         f"<i>This chapter will now open and stream immediately inside the Web Mini App! 🚀</i>",
         parse_mode="HTML"
     )
+
+
+# 🛰️ /scanallchannels — Auto-scan past messages across all channels to index past PDF files!
+def scanallchannels_cmd(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        return update.message.reply_text("🚫 Sudo only.")
+
+    from config import LOG_CHANNEL_ID
+    from database import manga_col, save_chapter_file
+    from channel_handler import extract_chapter_number
+    import threading
+    import time
+
+    msg = update.message.reply_text("🛰️ <b>Starting Background Channel Scan...</b>\n\nScanning past messages in all manga channels to index PDF files for the Webtoon Reader. You will receive a summary when finished!", parse_mode="HTML")
+
+    def run_scan():
+        bot = context.bot
+        mangas = list(manga_col.find({"channel_id": {"$ne": None}}))
+        total_found = 0
+        channels_scanned = 0
+
+        for m in mangas:
+            cid = m.get("channel_id")
+            m_name = m.get("name", "Unknown")
+            highest_ch = m.get("total_chapters", 0) or 0
+            max_range = max(250, highest_ch + 50)
+
+            found_in_manga = 0
+            for mid in range(1, max_range + 1):
+                try:
+                    fwd_msg = bot.forward_message(chat_id=LOG_CHANNEL_ID, from_chat_id=cid, message_id=mid)
+                    if fwd_msg.document and fwd_msg.document.file_name and fwd_msg.document.file_name.lower().endswith(".pdf"):
+                        doc = fwd_msg.document
+                        ch_num = extract_chapter_number(doc.file_name)
+                        if ch_num is not None:
+                            save_chapter_file(cid, ch_num, doc.file_id, doc.file_name, mid)
+                            found_in_manga += 1
+                            total_found += 1
+                            if ch_num > highest_ch:
+                                highest_ch = ch_num
+                    bot.delete_message(chat_id=LOG_CHANNEL_ID, message_id=fwd_msg.message_id)
+                except Exception:
+                    pass
+                time.sleep(0.04)
+
+            if highest_ch > (m.get("total_chapters") or 0):
+                manga_col.update_one({"channel_id": cid}, {"$set": {"total_chapters": highest_ch}})
+
+            channels_scanned += 1
+            if channels_scanned % 10 == 0:
+                logger.info(f"🛰️ Scanned {channels_scanned}/{len(mangas)} channels... ({total_found} PDF chapters indexed)")
+
+        bot.send_message(
+            chat_id=user_id,
+            text=(
+                f"🎉 <b>Channel Past Scan Complete!</b>\n\n"
+                f"• Total Channels Scanned: <b>{channels_scanned}</b>\n"
+                f"• Total PDF Chapters Indexed: <b>{total_found}</b>\n\n"
+                f"<i>All discovered chapters are now immediately readable in the In-App Web Reader! 🚀</i>"
+            ),
+            parse_mode="HTML"
+        )
+
+    threading.Thread(target=run_scan, daemon=True, name="DeepChannelScanner").start()
