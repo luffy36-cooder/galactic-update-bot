@@ -187,3 +187,60 @@ def syncchapters_cmd(update: Update, context: CallbackContext):
         f"<i>All manga in Web App & bot now have updated chapter counts.</i>",
         parse_mode="HTML"
     )
+
+
+# 📥 Forward PDF Indexer — Bulk forward past chapter PDFs in bot PM to index them for Web Reader!
+def handle_forwarded_chapter(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        return
+
+    message = update.message
+    if not message or not message.document:
+        return
+
+    doc = message.document
+    if not doc.file_name or not doc.file_name.lower().endswith(".pdf"):
+        return
+
+    import re
+    from database import get_manga_by_id, save_chapter_file, get_all_manga_cached
+    from channel_handler import extract_chapter_number
+
+    channel_id = None
+    if message.forward_from_chat:
+        channel_id = message.forward_from_chat.id
+
+    chapter = extract_chapter_number(doc.file_name)
+    if chapter is None:
+        return
+
+    manga_title = "Unknown Manga"
+    if channel_id:
+        manga = get_manga_by_id(channel_id)
+        if manga:
+            manga_title = manga.get("name", "Manga")
+    else:
+        # Match manga title against registered manga database
+        clean_name = re.sub(r'[\d._-]+', ' ', doc.file_name.rsplit('.', 1)[0]).strip().lower()
+        for m in get_all_manga_cached():
+            m_name = (m.get("name") or "").lower()
+            if m_name and (m_name in clean_name or clean_name in m_name):
+                channel_id = m.get("channel_id")
+                manga_title = m.get("name")
+                break
+
+    if not channel_id:
+        return update.message.reply_text(
+            f"⚠️ Could not match <code>{doc.file_name}</code> to a registered manga. Please forward directly from the channel or rename with the manga name.",
+            parse_mode="HTML"
+        )
+
+    save_chapter_file(channel_id, chapter, doc.file_id, doc.file_name, message.message_id)
+    update.message.reply_text(
+        f"⚡ <b>Indexed for In-App Webtoon Reader!</b>\n\n"
+        f"📚 <b>{manga_title}</b> — Chapter <b>{chapter}</b>\n"
+        f"📄 File: <code>{doc.file_name}</code>\n\n"
+        f"<i>This chapter will now open and stream immediately inside the Web Mini App! 🚀</i>",
+        parse_mode="HTML"
+    )

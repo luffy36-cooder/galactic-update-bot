@@ -52,6 +52,7 @@ from admin_handlers import (
     addadmins_cmd,
     removeadmins_cmd,
     sudo_cmd,
+    handle_forwarded_chapter,
 )
 from database import auto_sync_all_chapters
 from addmanga_handler import add_manga_cmd
@@ -200,8 +201,9 @@ def main():
     dp.add_handler(MessageHandler(Filters.text & Filters.chat_type.groups & (~Filters.command), search_by_text_if_enabled))
     dp.add_handler(MessageHandler(Filters.text & Filters.chat_type.private & (~Filters.command), request_manga))
 
-    # 🖼 Media/Posts
+    # 🖼 Media/Posts & Chapter Indexer
     dp.add_handler(MessageHandler(Filters.photo, handle_image))
+    dp.add_handler(MessageHandler(Filters.document & Filters.chat_type.private, handle_forwarded_chapter))
     dp.add_handler(MessageHandler(Filters.update.channel_posts, handle_channel_post))
 
     # 👥 Chat Events
