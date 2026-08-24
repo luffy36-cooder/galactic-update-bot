@@ -170,23 +170,117 @@ def sudo_cmd(update: Update, context: CallbackContext):
 
 # 🔄 /syncchapters or /autochapters — Automatically scan and update chapter counts for all manga
 def syncchapters_cmd(update: Update, context: CallbackContext):
-    if not is_admin(update.effective_user.id):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
         return update.message.reply_text("🚫 Sudo only.")
 
-    from database import auto_sync_all_chapters, manga_col
-    msg = update.message.reply_text("🔄 Auto-scanning all manga chapters from database...")
+    from database import manga_col, posted_chapter_col, chapter_files_col, bookmarks_col, _invalidate_manga_cache
+    import threading
+    import time
+    import html
 
-    updated = auto_sync_all_chapters()
-    total_with_chaps = sum(1 for m in manga_col.find() if m.get("total_chapters", 0) > 0)
-    total_manga = manga_col.count_documents({})
-
-    msg.edit_text(
-        f"✅ <b>Chapter Auto-Sync Complete!</b>\n\n"
-        f"• Newly updated: <b>{updated}</b>\n"
-        f"• Manga with indexed chapters: <b>{total_with_chaps}/{total_manga}</b>\n\n"
-        f"<i>All manga in Web App & bot now have updated chapter counts.</i>",
+    status_msg = update.message.reply_text(
+        "🔄 <b>Starting Chapter Auto-Sync...</b>\n\n"
+        "<code>[░░░░░░░░░░░░] 0%</code>\n"
+        "<i>Scanning database records...</i>",
         parse_mode="HTML"
     )
+
+    def run_sync():
+        all_manga = list(manga_col.find())
+        total_manga = len(all_manga)
+        updated_count = 0
+        scanned_count = 0
+        last_edit_time = time.time()
+
+        for m in all_manga:
+            cid = m.get("channel_id")
+            m_name = m.get("name", "Unknown")
+            scanned_count += 1
+
+            if not cid:
+                continue
+
+            highest_chap = m.get("total_chapters", 0) or 0
+
+            # 1. Check posted_chapter_col
+            posted_doc = posted_chapter_col.find_one({"channel_id": cid})
+            if posted_doc and posted_doc.get("chapters"):
+                for c in posted_doc["chapters"]:
+                    try:
+                        c_int = int(c)
+                        if c_int > highest_chap:
+                            highest_chap = c_int
+                    except (ValueError, TypeError):
+                        pass
+
+            # 2. Check chapter_files_col
+            ch_files = list(chapter_files_col.find({"channel_id": cid}))
+            for cf in ch_files:
+                c_int = cf.get("chapter")
+                if c_int and isinstance(c_int, int) and c_int > highest_chap:
+                    highest_chap = c_int
+
+            # 3. Check bookmarks_col
+            if m_name:
+                bm_docs = list(bookmarks_col.find({"$or": [{"channel_id": cid}, {"manga": m_name}]}))
+                for b in bm_docs:
+                    try:
+                        c_int = int(b.get("chapter", 0))
+                        if c_int > highest_chap:
+                            highest_chap = c_int
+                    except (ValueError, TypeError):
+                        pass
+
+            if highest_chap > 0 and highest_chap != m.get("total_chapters"):
+                manga_col.update_one({"channel_id": cid}, {"$set": {"total_chapters": highest_chap}})
+                updated_count += 1
+
+            now = time.time()
+            if now - last_edit_time >= 2.5 or scanned_count == total_manga:
+                last_edit_time = now
+                percent = int((scanned_count / total_manga) * 100) if total_manga > 0 else 0
+                filled = int((scanned_count / total_manga) * 12) if total_manga > 0 else 0
+                bar = "█" * filled + "░" * (12 - filled)
+
+                try:
+                    status_msg.edit_text(
+                        f"🔄 <b>Auto-Syncing Manga Chapters...</b>\n\n"
+                        f"<code>[{bar}] {percent}%</code> ({scanned_count}/{total_manga} manga)\n\n"
+                        f"📚 <b>Current:</b> <code>{html.escape(m_name[:35])}</code>\n"
+                        f"📄 <b>Max Chapter:</b> <b>{highest_chap}</b>\n"
+                        f"🔄 <b>Updated Titles:</b> <b>{updated_count}</b>\n\n"
+                        f"<i>Matching posts, indexed files & bookmarks...</i>",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+
+        if updated_count > 0:
+            _invalidate_manga_cache()
+
+        total_with_chaps = sum(1 for x in manga_col.find() if x.get("total_chapters", 0) > 0)
+        try:
+            status_msg.edit_text(
+                f"✅ <b>Chapter Auto-Sync Complete!</b>\n\n"
+                f"<code>[████████████] 100%</code>\n\n"
+                f"• <b>Newly Updated Titles:</b> {updated_count}\n"
+                f"• <b>Manga with Indexed Chapters:</b> {total_with_chaps}/{total_manga}\n\n"
+                f"<i>All manga in Web App & bot now have updated chapter counts! 🚀</i>",
+                parse_mode="HTML"
+            )
+        except Exception:
+            context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    f"✅ <b>Chapter Auto-Sync Complete!</b>\n\n"
+                    f"• Newly updated: <b>{updated_count}</b>\n"
+                    f"• Manga with indexed chapters: <b>{total_with_chaps}/{total_manga}</b>"
+                ),
+                parse_mode="HTML"
+            )
+
+    threading.Thread(target=run_sync, daemon=True, name="ChapterSyncWorker").start()
 
 
 # 📥 Forward PDF Indexer — Bulk forward past chapter PDFs in bot PM to index them for Web Reader!

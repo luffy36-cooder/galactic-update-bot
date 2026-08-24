@@ -649,6 +649,13 @@ def auto_sync_all_chapters():
                 except (ValueError, TypeError):
                     pass
 
+        # Check chapter_files_col
+        ch_files = list(chapter_files_col.find({"channel_id": cid}))
+        for cf in ch_files:
+            c_int = cf.get("chapter")
+            if c_int and isinstance(c_int, int) and c_int > highest_chap:
+                highest_chap = c_int
+
         # Check bookmarks
         name = m.get("name", "")
         if name:
