@@ -223,6 +223,13 @@ register_web_routes(app, get_bot)
 def home():
     return "Galactic Bot is alive and running smoothly! 🌌🚀 Visit /web for Manga Mini App."
 
+def run_flask():
+    app.run(host="0.0.0.0", port=10000, use_reloader=False)
+
 if __name__ == "__main__":
-    threading.Thread(target=main, name="BotThread", daemon=True).start()
-    app.run(host="0.0.0.0", port=10000)
+    # Start Flask Web Mini App in background daemon thread
+    flask_thread = threading.Thread(target=run_flask, name="FlaskThread", daemon=True)
+    flask_thread.start()
+
+    # Run Telegram Bot polling on Main Thread (handles OS signals & PTB idle cleanly)
+    main()
