@@ -7,7 +7,6 @@ const tg = window.Telegram?.WebApp;
 if (tg) {
   tg.ready();
   tg.expand();
-  // Set header color to match dark background
   if (tg.setHeaderColor) tg.setHeaderColor('#0b0c13');
   if (tg.setBackgroundColor) tg.setBackgroundColor('#0b0c13');
 }
@@ -16,6 +15,7 @@ if (tg) {
 const tgUser = tg?.initDataUnsafe?.user;
 const urlParams = new URLSearchParams(window.location.search);
 const currentUserId = tgUser?.id || urlParams.get('user_id') || localStorage.getItem('galactic_user_id') || 6600689593;
+const currentUserName = tgUser ? `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() : 'Reader';
 
 if (currentUserId) {
   localStorage.setItem('galactic_user_id', currentUserId);
@@ -25,6 +25,8 @@ if (currentUserId) {
 let catalogData = [];
 let activeFilter = 'all';
 let selectedBookmarkManga = null;
+let selectedRatingChannelId = null;
+let selectedRatingValue = 5;
 
 // =========================================================
 // 🚀 Main Entry Point
@@ -84,6 +86,21 @@ function initCatalogPage() {
     bmSaveBtn.addEventListener('click', submitBookmark);
   }
 
+  // Setup Rating Modal Stars
+  document.querySelectorAll('.star-pick').forEach(star => {
+    star.addEventListener('click', () => {
+      const val = parseInt(star.getAttribute('data-val'));
+      setRatingStars(val);
+      hapticFeedback('selection');
+    });
+  });
+
+  // Setup Rating Modal Submit Button
+  const rateSubmitBtn = document.getElementById('rateSubmitBtn');
+  if (rateSubmitBtn) {
+    rateSubmitBtn.addEventListener('click', submitRating);
+  }
+
   // Fetch Catalog from API
   fetchCatalog();
 }
@@ -115,16 +132,22 @@ function filterAndRenderCatalog() {
 
   if (!grid) return;
 
-  const filtered = catalogData.filter(item => {
+  let filtered = catalogData.filter(item => {
     // 1. Search match
     const titleMatch = !query || item.name.toLowerCase().includes(query);
     if (!titleMatch) return false;
 
     // 2. Category filter match
     if (activeFilter === 'all') return true;
+    if (activeFilter === 'toprated') return item.total_ratings > 0;
+    if (activeFilter === 'subscribed') return item.is_subscribed;
     if (activeFilter === 'bookmarked') return item.is_bookmarked;
     return item.status && item.status.includes(activeFilter);
   });
+
+  if (activeFilter === 'toprated') {
+    filtered.sort((a, b) => (b.avg_rating || 0) - (a.avg_rating || 0) || (b.total_ratings || 0) - (a.total_ratings || 0));
+  }
 
   if (filtered.length === 0) {
     grid.innerHTML = '';
@@ -142,9 +165,13 @@ function createMangaCardHtml(item) {
   const isRead = item.status && item.status.includes('read');
   const isComp = item.status && item.status.includes('completed');
   const isBm = item.is_bookmarked;
+  const isSub = item.is_subscribed;
 
   const chapCount = item.total_chapters ? `Ch. ${item.total_chapters}` : 'Ongoing';
   const bmBadge = isBm && item.bookmark_chapter ? `<span class="bookmark-tag">Ch. ${item.bookmark_chapter}</span>` : '';
+  const ratingBadge = item.total_ratings > 0 
+    ? `<span class="badge-rating"><i class="fa-solid fa-star"></i> ${item.avg_rating}</span>`
+    : `<span class="badge-rating" style="color:#94a3b8;"><i class="fa-regular fa-star"></i> New</span>`;
 
   return `
     <div class="manga-card" data-cid="${item.channel_id}" data-name="${escapeHtml(item.name)}">
@@ -152,6 +179,7 @@ function createMangaCardHtml(item) {
         <img src="${item.image_url}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="this.src='/static/images/default_cover.svg'">
         <span class="badge-chapters">${chapCount}</span>
         ${bmBadge}
+        ${ratingBadge}
       </div>
       <div class="card-details">
         <h4 class="manga-title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
@@ -160,17 +188,20 @@ function createMangaCardHtml(item) {
             <i class="fa-solid fa-book-open-reader"></i> Read Channel
           </a>
           <div class="status-actions-row">
+            <button class="btn-icon-action ${isSub ? 'active-sub' : ''}" onclick="toggleSubscribe(${item.channel_id}, ${!isSub})" title="Auto Chapter Alert">
+              <i class="${isSub ? 'fa-solid' : 'fa-regular'} fa-bell"></i>
+            </button>
             <button class="btn-icon-action ${isFav ? 'active-fav' : ''}" onclick="toggleStatus(${item.channel_id}, 'favorite', ${!isFav})" title="Favorite">
               <i class="${isFav ? 'fa-solid' : 'fa-regular'} fa-heart"></i>
             </button>
             <button class="btn-icon-action ${isRead ? 'active-read' : ''}" onclick="toggleStatus(${item.channel_id}, 'read', ${!isRead})" title="Mark Read">
               <i class="fa-solid fa-check"></i>
             </button>
-            <button class="btn-icon-action ${isComp ? 'active-comp' : ''}" onclick="toggleStatus(${item.channel_id}, 'completed', ${!isComp})" title="Completed">
-              <i class="fa-solid fa-flag-checkered"></i>
-            </button>
             <button class="btn-icon-action ${isBm ? 'active-bm' : ''}" onclick="openBookmarkModal('${escapeHtml(item.name)}', ${item.bookmark_chapter || ''})" title="Bookmark">
               <i class="${isBm ? 'fa-solid' : 'fa-regular'} fa-bookmark"></i>
+            </button>
+            <button class="btn-icon-action" onclick="openRateModal(${item.channel_id}, '${escapeHtml(item.name)}', ${item.user_rating || 5})" title="Rate Manga">
+              <i class="fa-solid fa-star" style="color:#fbbf24;"></i>
             </button>
           </div>
         </div>
@@ -180,12 +211,123 @@ function createMangaCardHtml(item) {
 }
 
 // =========================================================
+// 🔔 Toggle Subscription Action
+// =========================================================
+async function toggleSubscribe(channelId, subAction) {
+  hapticFeedback('impact');
+
+  const manga = catalogData.find(m => m.channel_id === channelId);
+  if (manga) {
+    manga.is_subscribed = subAction;
+    filterAndRenderCatalog();
+  }
+
+  try {
+    const res = await fetch('/api/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: currentUserId,
+        channel_id: channelId,
+        subscribe: subAction
+      })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      showToast(subAction ? '🔔 Subscribed to new chapter alerts!' : '🔕 Unsubscribed');
+      hapticFeedback('notification');
+    }
+  } catch (err) {
+    console.error('Failed to toggle subscription:', err);
+    showToast('Failed to sync subscription');
+  }
+}
+
+// =========================================================
+// ⭐ 5-Star Rating & Review Modal
+// =========================================================
+function openRateModal(channelId, mangaName, existingRating = 5) {
+  selectedRatingChannelId = channelId;
+  const modal = document.getElementById('rateModal');
+  const titleEl = document.getElementById('rateModalTitle');
+  const reviewInput = document.getElementById('reviewTextInput');
+
+  if (titleEl) titleEl.textContent = `Rate ${mangaName}`;
+  if (reviewInput) reviewInput.value = '';
+
+  setRatingStars(existingRating || 5);
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeRateModal() {
+  const modal = document.getElementById('rateModal');
+  if (modal) modal.style.display = 'none';
+  selectedRatingChannelId = null;
+}
+
+function setRatingStars(val) {
+  selectedRatingValue = val;
+  const hintEl = document.getElementById('ratingScoreHint');
+  if (hintEl) hintEl.textContent = `${val} / 5 Stars`;
+
+  document.querySelectorAll('.star-pick').forEach(star => {
+    const starVal = parseInt(star.getAttribute('data-val'));
+    if (starVal <= val) {
+      star.classList.add('active-star');
+      star.innerHTML = '<i class="fa-solid fa-star"></i>';
+    } else {
+      star.classList.remove('active-star');
+      star.innerHTML = '<i class="fa-regular fa-star"></i>';
+    }
+  });
+}
+
+async function submitRating() {
+  if (!selectedRatingChannelId) return;
+
+  const reviewInput = document.getElementById('reviewTextInput');
+  const reviewText = reviewInput ? reviewInput.value.trim() : '';
+
+  try {
+    const res = await fetch('/api/rate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: currentUserId,
+        user_name: currentUserName,
+        channel_id: selectedRatingChannelId,
+        rating: selectedRatingValue,
+        review: reviewText
+      })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      // Update catalog entry
+      const m = catalogData.find(x => x.channel_id === selectedRatingChannelId);
+      if (m && data.summary) {
+        m.avg_rating = data.summary.avg_rating;
+        m.total_ratings = data.summary.total_ratings;
+        m.user_rating = selectedRatingValue;
+      }
+      closeRateModal();
+      filterAndRenderCatalog();
+      showToast(`⭐ Rated ${selectedRatingValue}/5 stars! Thank you!`);
+      hapticFeedback('notification');
+    }
+  } catch (err) {
+    console.error('Failed to submit rating:', err);
+    showToast('Failed to submit rating');
+  }
+}
+
+// =========================================================
 // 🔄 Toggle Status Action
 // =========================================================
 async function toggleStatus(channelId, statusKey, add) {
   hapticFeedback('impact');
 
-  // Optimistic UI Update
   const manga = catalogData.find(m => m.channel_id === channelId);
   if (manga) {
     if (!manga.status) manga.status = [];
@@ -264,7 +406,6 @@ async function submitBookmark() {
 
     const data = await res.json();
     if (data.success) {
-      // Update local state
       const m = catalogData.find(x => x.name.toLowerCase() === selectedBookmarkManga.toLowerCase());
       if (m) {
         m.is_bookmarked = true;

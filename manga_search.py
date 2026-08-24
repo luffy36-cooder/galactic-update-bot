@@ -1,11 +1,15 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+import html
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
 from telegram.ext import CallbackContext
 from database import (
     search_manga_by_name,
     get_user_manga_status,
-    get_group_mode
+    get_group_mode,
+    get_manga_rating_summary,
+    is_user_subscribed
 )
-from rapidfuzz import fuzz, process
+from config import WEB_APP_URL
+
 
 # ========================
 # ✅ /manga command handler
@@ -16,6 +20,7 @@ def search_by_command(update: Update, context: CallbackContext):
         return
     query = " ".join(context.args).strip()
     send_search_result(update, context, query)
+
 
 # ===============================
 # ✅ Group text-based search mode
@@ -34,6 +39,7 @@ def search_by_text_if_enabled(update: Update, context: CallbackContext):
         return
 
     send_search_result(update, context, text)
+
 
 # ========================
 # 🔍 Search result handler
@@ -54,7 +60,7 @@ def send_search_result(update_or_query, context: CallbackContext, query: str):
         ]
         keyboard = InlineKeyboardMarkup(buttons)
         send_message(update_or_query,
-                     f"🔎 Found multiple matches for <b>{query}</b>. Please select:",
+                     f"🔎 Found multiple matches for <b>{html.escape(query)}</b>. Please select:",
                      reply_markup=keyboard,
                      parse_mode="HTML")
         return
@@ -62,24 +68,53 @@ def send_search_result(update_or_query, context: CallbackContext, query: str):
     # Only one result → show manga info
     _send_single_manga(update_or_query, results[0])
 
+
 # =====================================
 # 🔘 Display single manga with buttons
 # =====================================
 def _send_single_manga(update_or_query, result: dict):
     user_id = get_user_id(update_or_query)
-    status = get_user_manga_status(user_id, result["channel_id"]) or []
+    cid = result.get("channel_id")
+    status = get_user_manga_status(user_id, cid) if cid else []
+    rating_data = get_manga_rating_summary(cid, user_id) if cid else {}
+    is_sub = is_user_subscribed(user_id, cid) if cid else False
 
-    buttons = [[InlineKeyboardButton("📖 Read",
-                                     url=result.get("channel_link") or f"https://t.me/c/{str(result['channel_id'])[4:]}/1")]]
+    # Rating badge
+    avg = rating_data.get("avg_rating", 0.0)
+    count = rating_data.get("total_ratings", 0)
+    user_rat = rating_data.get("user_rating")
+    
+    if count > 0:
+        stars_str = f"⭐ <b>{avg}/5.0</b> ({count} {'review' if count == 1 else 'reviews'})"
+    else:
+        stars_str = "⭐ <i>No ratings yet</i>"
 
-    status_buttons = [
-        ("read", "✅ Mark as Read", "❌ Remove Read"),
-        ("completed", "🏁 Mark as Completed", "🚫 Remove Completed"),
-        ("favorite", "❤️ Add to Favorites", "💔 Remove Favorite"),
-        ("dropped", "👋 Drop", "♻️ Undrop"),
-        ("hold", "⏸️ Hold", "🔄 Unhold")
+    if user_rat:
+        stars_str += f" • <i>Your rating: {user_rat}★</i>"
+
+    # Action buttons
+    channel_link = result.get("channel_link") or (f"https://t.me/c/{str(cid)[4:]}/1" if cid else "https://t.me")
+    buttons = [
+        [
+            InlineKeyboardButton("📖 Read Channel", url=channel_link),
+            InlineKeyboardButton("🚀 Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))
+        ],
+        [
+            InlineKeyboardButton(f"{'🔕 Subscribed' if is_sub else '🔔 Subscribe'}", callback_data=f"subtoggle_{cid}_{user_id}"),
+            InlineKeyboardButton("⭐ Rate (1-5★)", callback_data=f"showrate_{cid}_{user_id}")
+        ]
     ]
 
+    status_buttons = [
+        ("read", "✅ Mark Read", "❌ Unread"),
+        ("favorite", "❤️ Favorite", "💔 Unfavorite"),
+        ("completed", "🏁 Completed", "🚫 Uncompleted"),
+        ("hold", "⏸️ On Hold", "🔄 Unhold"),
+        ("dropped", "👋 Drop", "♻️ Undrop")
+    ]
+
+    # Grid of status buttons (2 per row)
+    row = []
     for stat, add_text, remove_text in status_buttons:
         is_active = stat in status
         action_map = {
@@ -91,11 +126,24 @@ def _send_single_manga(update_or_query, result: dict):
         }
         action = action_map.get(stat, stat)
         display = remove_text if is_active else add_text
-        callback = f"{action}_{result['channel_id']}_{user_id}"
-        buttons.append([InlineKeyboardButton(display, callback_data=callback)])
+        callback = f"{action}_{cid}_{user_id}"
+        row.append(InlineKeyboardButton(display, callback_data=callback))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
 
     keyboard = InlineKeyboardMarkup(buttons)
-    caption = f"<b>{result['name'].title()}</b>\nClick below to read or mark status 👇"
+    safe_name = html.escape(result.get("name", "Manga").title())
+    total_chap = result.get("total_chapters")
+    chap_info = f" • <b>{total_chap}</b> chapters" if total_chap else ""
+
+    caption = (
+        f"📚 <b>{safe_name}</b>{chap_info}\n"
+        f"{stars_str}\n\n"
+        f"<i>Tap below to read, subscribe to new chapter alerts, or track your reading status:</i>"
+    )
 
     try:
         if hasattr(update_or_query, "callback_query") and update_or_query.callback_query:
@@ -112,8 +160,8 @@ def _send_single_manga(update_or_query, result: dict):
             else:
                 update_or_query.message.reply_text(caption, parse_mode="HTML", reply_markup=keyboard)
     except Exception as e:
-        print(f"[⚠️ Error sending manga result] {e}")
-        send_message(update_or_query, f"<b>{result['name'].title()}</b>\n📖 {result.get('channel_link')}")
+        send_message(update_or_query, f"<b>{safe_name}</b>\n📖 {channel_link}", parse_mode="HTML")
+
 
 # =========================
 # 🔹 Helper: Send message
@@ -123,6 +171,7 @@ def send_message(update_or_query, text, reply_markup=None, parse_mode=None):
         update_or_query.callback_query.message.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
     else:
         update_or_query.message.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+
 
 # =====================================
 # 🔹 Helper: Get user id from Update or CallbackQuery

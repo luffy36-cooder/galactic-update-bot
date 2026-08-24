@@ -47,6 +47,8 @@
   <nav class="filter-nav">
     <div class="filter-scroll">
       <button class="filter-pill active" data-filter="all"><i class="fa-solid fa-globe"></i> All</button>
+      <button class="filter-pill" data-filter="toprated"><i class="fa-solid fa-star"></i> Top Rated</button>
+      <button class="filter-pill" data-filter="subscribed"><i class="fa-solid fa-bell"></i> Subscribed</button>
       <button class="filter-pill" data-filter="bookmarked"><i class="fa-solid fa-bookmark"></i> Bookmarks</button>
       <button class="filter-pill" data-filter="read"><i class="fa-solid fa-check"></i> Read</button>
       <button class="filter-pill" data-filter="favorite"><i class="fa-solid fa-heart"></i> Favorites</button>
@@ -95,6 +97,37 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeBookmarkModal()">Cancel</button>
         <button class="btn btn-primary" id="bmSaveBtn">Save Bookmark</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5-Star Rating & Review Modal -->
+  <div id="rateModal" class="modal-backdrop" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="rateModalTitle">Rate & Review</h3>
+        <button class="modal-close" onclick="closeRateModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-subtitle">Share your score and thoughts with the community</p>
+        
+        <div class="star-rating-selector">
+          <span class="star-pick" data-val="1"><i class="fa-solid fa-star"></i></span>
+          <span class="star-pick" data-val="2"><i class="fa-solid fa-star"></i></span>
+          <span class="star-pick" data-val="3"><i class="fa-solid fa-star"></i></span>
+          <span class="star-pick" data-val="4"><i class="fa-solid fa-star"></i></span>
+          <span class="star-pick" data-val="5"><i class="fa-solid fa-star"></i></span>
+        </div>
+        <div class="rating-label-hint" id="ratingScoreHint">5 / 5 Stars</div>
+
+        <div class="input-group" style="margin-top: 14px;">
+          <label for="reviewTextInput">Review (Optional)</label>
+          <textarea id="reviewTextInput" rows="3" placeholder="What do you think of this manga?"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeRateModal()">Cancel</button>
+        <button class="btn btn-primary" id="rateSubmitBtn">Submit Rating</button>
       </div>
     </div>
   </div>

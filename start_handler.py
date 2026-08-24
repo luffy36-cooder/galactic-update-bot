@@ -113,8 +113,13 @@ def help_cmd(update: Update, context: CallbackContext):
         "🌟 Recommendations:\n"
         "/recommend — Based on your favorites\n\n"
 
-        "🥇 Leaderboard:\n"
-        "/leaderboard — Top readers by chapters\n\n"
+        "🥇 Leaderboard & Ratings:\n"
+        "/leaderboard — Top readers by chapters\n"
+        "/toprated — Highest rated manga by community ⭐\n\n"
+
+        "🌐 Web Mini App:\n"
+        "/web — Launch Manga Catalog Mini App\n"
+        "/webprofile — Launch Advanced Visual Profile\n\n"
 
         "🛠 Admin Tools:\n"
         "/add &lt;channel_id&gt; &lt;manga name&gt;\n"

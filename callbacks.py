@@ -1,7 +1,7 @@
 import logging
 import random
 import html
-from telegram import Update, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from telegram.ext import CallbackContext
 
 from database import (
@@ -9,9 +9,14 @@ from database import (
     get_user_manga_lists,
     get_manga_by_id,
     mark_chapter_as_read,
-    read_log_col
+    read_log_col,
+    save_manga_rating,
+    get_manga_rating_summary,
+    subscribe_manga,
+    unsubscribe_manga,
+    is_user_subscribed
 )
-from config import LOG_CHANNEL_ID
+from config import LOG_CHANNEL_ID, WEB_APP_URL
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +45,14 @@ def format_manga_list(channel_ids):
 
 # 🌟 Main inline callback button handler
 def handle_status_buttons(update: Update, context: CallbackContext):
+    from manga_search import _send_single_manga
+
     query = update.callback_query
     user_id = query.from_user.id
+    user_name = query.from_user.full_name or "Reader"
     data = query.data
 
-    # Handle view_mylist
+    # 1. Handle view_mylist
     if data.startswith("view_mylist:"):
         try:
             _, target_id = data.split(":", 1)
@@ -68,7 +76,89 @@ def handle_status_buttons(update: Update, context: CallbackContext):
             query.answer("⚠️ Something went wrong.", show_alert=True)
         return
 
-    # Parse status callbacks e.g. read_-100123456_99999
+    # 2. Handle Rating Menu: showrate_<channel_id>_<owner_id>
+    if data.startswith("showrate_"):
+        parts = data.split("_")
+        if len(parts) >= 3:
+            try:
+                cid = int(parts[1])
+                owner_id = int(parts[2])
+            except ValueError:
+                return
+
+            if user_id != owner_id:
+                query.answer("👀 You can only rate from your own search!", show_alert=True)
+                return
+
+            rate_buttons = [
+                [
+                    InlineKeyboardButton("⭐ 1", callback_data=f"setrate_{cid}_1_{user_id}"),
+                    InlineKeyboardButton("⭐ 2", callback_data=f"setrate_{cid}_2_{user_id}"),
+                    InlineKeyboardButton("⭐ 3", callback_data=f"setrate_{cid}_3_{user_id}"),
+                    InlineKeyboardButton("⭐ 4", callback_data=f"setrate_{cid}_4_{user_id}"),
+                    InlineKeyboardButton("⭐ 5", callback_data=f"setrate_{cid}_5_{user_id}")
+                ],
+                [InlineKeyboardButton("⬅ Back to Manga", callback_data=f"select_{cid}_{user_id}")]
+            ]
+            try:
+                query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(rate_buttons))
+                query.answer("Select your rating (1 to 5 stars):")
+            except Exception:
+                pass
+            return
+
+    # 3. Handle Rating Save: setrate_<channel_id>_<rating>_<owner_id>
+    if data.startswith("setrate_"):
+        parts = data.split("_")
+        if len(parts) >= 4:
+            try:
+                cid = int(parts[1])
+                rating = int(parts[2])
+                owner_id = int(parts[3])
+            except ValueError:
+                return
+
+            if user_id != owner_id:
+                query.answer("👀 This isn't your rating menu.", show_alert=True)
+                return
+
+            save_manga_rating(user_id, user_name, cid, rating)
+            manga = get_manga_by_id(cid)
+            manga_name = manga.get("name", "Manga") if manga else "Manga"
+            query.answer(f"⭐ You rated {manga_name} {rating}/5 stars! Thank you! 🎉", show_alert=True)
+
+            if manga:
+                _send_single_manga(update, manga)
+            return
+
+    # 4. Handle Subscription Toggle: subtoggle_<channel_id>_<owner_id>
+    if data.startswith("subtoggle_"):
+        parts = data.split("_")
+        if len(parts) >= 3:
+            try:
+                cid = int(parts[1])
+                owner_id = int(parts[2])
+            except ValueError:
+                return
+
+            if user_id != owner_id:
+                query.answer("👀 This button is not for you.", show_alert=True)
+                return
+
+            currently_subbed = is_user_subscribed(user_id, cid)
+            if currently_subbed:
+                unsubscribe_manga(user_id, cid)
+                query.answer("🔕 Unsubscribed from chapter release alerts.", show_alert=True)
+            else:
+                subscribe_manga(user_id, cid)
+                query.answer("🔔 Subscribed! You will receive direct DM alerts when new chapters drop! 🚀", show_alert=True)
+
+            manga = get_manga_by_id(cid)
+            if manga:
+                _send_single_manga(update, manga)
+            return
+
+    # 5. Handle standard status callbacks e.g. read_-100123456_99999
     parts = data.split("_")
     if len(parts) < 3:
         query.answer("⚠️ Invalid button data.", show_alert=True)
@@ -136,6 +226,11 @@ def handle_status_buttons(update: Update, context: CallbackContext):
         query.answer(text=feedback.get(action, "Updated!"), show_alert=False)
     except Exception:
         pass
+
+    # Refresh card display in-place
+    manga = get_manga_by_id(channel_id)
+    if manga:
+        _send_single_manga(update, manga)
 
 
 # 🔘 Multiple Search Result Selection Callback

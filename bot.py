@@ -22,7 +22,7 @@ from profile_handler import profile_cmd
 from stats_handler import stats_cmd
 from ping_handler import ping_cmd
 from mode_handler import set_mode_cmd
-from leaderboard_handler import leaderboard_cmd
+from leaderboard_handler import leaderboard_cmd, toprated_cmd
 from recommend_handler import recommend_cmd
 from listmanga_handler import register_listmanga_handlers
 
@@ -127,6 +127,7 @@ def main():
     dp.add_handler(CommandHandler("ping", ping_cmd))
     dp.add_handler(CommandHandler("recommend", recommend_cmd))
     dp.add_handler(CommandHandler("leaderboard", leaderboard_cmd))
+    dp.add_handler(CommandHandler("toprated", toprated_cmd))
     dp.add_handler(CommandHandler("manga", search_by_command))
 
     # 🛠 Admin Commands
@@ -169,7 +170,7 @@ def main():
     # 🔁 Callback Handlers
     dp.add_handler(CallbackQueryHandler(help_button_handler, pattern="^help_"))
     dp.add_handler(CallbackQueryHandler(handle_bookmark_buttons, pattern="^bm_"))
-    dp.add_handler(CallbackQueryHandler(handle_status_buttons, pattern="^(read|unread|fav|unfav|complete|uncomplete|drop|undrop|hold|unhold|view)_"))
+    dp.add_handler(CallbackQueryHandler(handle_status_buttons, pattern="^(read|unread|fav|unfav|complete|uncomplete|drop|undrop|hold|unhold|view|showrate|setrate|subtoggle)_"))
     dp.add_handler(CallbackQueryHandler(complete_request_callback, pattern="^complete_request"))
     dp.add_handler(CallbackQueryHandler(deny_request_callback, pattern="^deny_request"))
     dp.add_handler(CallbackQueryHandler(select_manga_callback, pattern=r"^select_"))

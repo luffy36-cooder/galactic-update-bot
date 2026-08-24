@@ -421,6 +421,78 @@ body {
   border-color: var(--accent-purple);
 }
 
+.btn-icon-action.active-sub {
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--accent-amber);
+  border-color: var(--accent-amber);
+}
+
+/* Badge Rating on Poster */
+.badge-rating {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  color: #fbbf24;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* Star Rating Selector in Modal */
+.star-rating-selector {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  font-size: 28px;
+  color: #4b5563;
+  margin: 12px 0 6px;
+}
+
+.star-pick {
+  cursor: pointer;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.star-pick:active {
+  transform: scale(1.3);
+}
+
+.star-pick.active-star {
+  color: #fbbf24;
+  text-shadow: 0 0 12px rgba(251, 191, 36, 0.6);
+}
+
+.rating-label-hint {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.input-group textarea {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+}
+
+.input-group textarea:focus {
+  border-color: var(--accent-purple);
+}
+
 /* Skeleton loader */
 .skeleton {
   background: var(--bg-card);

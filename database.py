@@ -2,7 +2,7 @@ import re
 import time
 import logging
 from datetime import datetime
-from pymongo import MongoClient, ASCENDING
+from pymongo import MongoClient, ASCENDING, DESCENDING
 from config import MONGO_URI
 from rapidfuzz import process, fuzz
 
@@ -24,6 +24,8 @@ posted_chapter_col = db["posted_chapters"]
 sudo_col = db["sudo_users"]
 request_col = db["manga_requests"]
 broadcast_log_col = db["broadcast_log"]
+ratings_col = db["manga_ratings"]
+subscriptions_col = db["manga_subscriptions"]
 
 
 # ==========================================
@@ -54,6 +56,9 @@ def init_db_indexes():
         sudo_col.create_index([("user_id", ASCENDING)], unique=True)
         request_col.create_index([("status", ASCENDING)])
         broadcast_log_col.create_index([("original_msg_id", ASCENDING)])
+        ratings_col.create_index([("channel_id", ASCENDING), ("user_id", ASCENDING)], unique=True)
+        subscriptions_col.create_index([("channel_id", ASCENDING), ("user_id", ASCENDING)], unique=True)
+        subscriptions_col.create_index([("user_id", ASCENDING)])
         logger.info("✅ Database indexes initialized successfully.")
     except Exception as e:
         logger.warning(f"⚠️ Index initialization notice: {e}")
@@ -432,3 +437,135 @@ def unmark_chapter_posted(channel_id, chapter):
         {"channel_id": channel_id},
         {"$pull": {"chapters": chapter}}
     )
+
+
+# ==========================================
+# ⭐ Community Ratings & Reviews
+# ==========================================
+def save_manga_rating(user_id: int, user_name: str, channel_id: int, rating: int, review: str = None):
+    """Saves or updates a user rating (1-5) and optional review."""
+    rating = max(1, min(5, int(rating)))
+    data = {
+        "channel_id": channel_id,
+        "user_id": user_id,
+        "user_name": user_name or "Anonymous",
+        "rating": rating,
+        "review": review.strip() if review else None,
+        "updated_at": datetime.utcnow()
+    }
+    ratings_col.update_one(
+        {"channel_id": channel_id, "user_id": user_id},
+        {"$set": data},
+        upsert=True
+    )
+    increment_user_achievement(user_id, "ratings")
+    return True
+
+
+def get_manga_rating_summary(channel_id: int, user_id: int = None):
+    """Returns average rating, total review count, and current user's rating."""
+    pipeline = [
+        {"$match": {"channel_id": channel_id}},
+        {"$group": {
+            "_id": "$channel_id",
+            "avg_rating": {"$avg": "$rating"},
+            "total_ratings": {"$sum": 1}
+        }}
+    ]
+    res = list(ratings_col.aggregate(pipeline))
+    avg_rating = round(res[0]["avg_rating"], 1) if res else 0.0
+    total_ratings = res[0]["total_ratings"] if res else 0
+
+    user_rating = None
+    if user_id:
+        doc = ratings_col.find_one({"channel_id": channel_id, "user_id": user_id}, {"rating": 1})
+        if doc:
+            user_rating = doc.get("rating")
+
+    return {
+        "avg_rating": avg_rating,
+        "total_ratings": total_ratings,
+        "user_rating": user_rating
+    }
+
+
+def get_manga_reviews(channel_id: int, limit: int = 5):
+    """Fetches the latest reviews for a manga."""
+    raw_reviews = list(ratings_col.find(
+        {"channel_id": channel_id, "review": {"$ne": None}},
+        {"_id": 0, "user_name": 1, "rating": 1, "review": 1, "updated_at": 1}
+    ).sort("updated_at", DESCENDING).limit(limit))
+    for r in raw_reviews:
+        if isinstance(r.get("updated_at"), datetime):
+            r["updated_at"] = r["updated_at"].strftime("%b %d, %Y")
+    return raw_reviews
+
+
+def get_top_rated_manga(limit: int = 10):
+    """Returns top-rated manga by average rating with at least 1 rating."""
+    pipeline = [
+        {"$group": {
+            "_id": "$channel_id",
+            "avg_rating": {"$avg": "$rating"},
+            "total_ratings": {"$sum": 1}
+        }},
+        {"$sort": {"avg_rating": -1, "total_ratings": -1}},
+        {"$limit": limit}
+    ]
+    top_entries = list(ratings_col.aggregate(pipeline))
+    results = []
+    for entry in top_entries:
+        cid = entry["_id"]
+        manga = get_manga_by_id(cid)
+        if manga:
+            results.append({
+                "channel_id": cid,
+                "name": manga.get("name", "Unknown"),
+                "channel_link": manga.get("channel_link") or f"https://t.me/c/{str(cid)[4:]}/1",
+                "avg_rating": round(entry["avg_rating"], 1),
+                "total_ratings": entry["total_ratings"],
+                "image": manga.get("image")
+            })
+    return results
+
+
+# ==========================================
+# 🔔 Auto New Chapter Subscriptions
+# ==========================================
+def subscribe_manga(user_id: int, channel_id: int) -> bool:
+    """Subscribes a user to direct new chapter DM alerts."""
+    subscriptions_col.update_one(
+        {"channel_id": channel_id, "user_id": user_id},
+        {"$set": {"channel_id": channel_id, "user_id": user_id, "created_at": datetime.utcnow()}},
+        upsert=True
+    )
+    return True
+
+
+def unsubscribe_manga(user_id: int, channel_id: int) -> bool:
+    """Unsubscribes a user from new chapter alerts."""
+    res = subscriptions_col.delete_one({"channel_id": channel_id, "user_id": user_id})
+    return res.deleted_count > 0
+
+
+def is_user_subscribed(user_id: int, channel_id: int) -> bool:
+    return bool(subscriptions_col.find_one({"channel_id": channel_id, "user_id": user_id}))
+
+
+def get_user_subscriptions(user_id: int):
+    """Returns list of channel IDs a user is subscribed to."""
+    return [doc["channel_id"] for doc in subscriptions_col.find({"user_id": user_id}, {"channel_id": 1})]
+
+
+def get_manga_subscribers(channel_id: int) -> list[int]:
+    """Returns unique list of user IDs who subscribed or favorited this manga."""
+    sub_uids = {doc["user_id"] for doc in subscriptions_col.find({"channel_id": channel_id}, {"user_id": 1})}
+
+    # Also include users who marked this manga as favorite
+    fav_uids = {
+        doc["user_id"] for doc in manga_status_col.find(
+            {"channel_id": channel_id, "status": "favorite"},
+            {"user_id": 1}
+        )
+    }
+    return list(sub_uids | fav_uids)

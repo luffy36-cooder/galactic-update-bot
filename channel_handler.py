@@ -2,12 +2,13 @@ import logging
 import re
 import threading
 import time
+import html
 from collections import defaultdict
 from datetime import datetime, timezone
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from telegram.ext import CallbackContext
 
-from config import BOT_OWNER_ID, UPDATE_CHANNEL_ID, LOG_CHANNEL_ID
+from config import BOT_OWNER_ID, UPDATE_CHANNEL_ID, LOG_CHANNEL_ID, WEB_APP_URL
 from database import (
     is_sudo,
     add_channel,
@@ -18,6 +19,7 @@ from database import (
     was_chapter_posted,
     mark_chapter_posted,
     unmark_chapter_posted,
+    get_manga_subscribers,
 )
 
 logger = logging.getLogger(__name__)
@@ -25,6 +27,7 @@ BOT_START_TIME = datetime.now(timezone.utc)
 waiting_for_image = {}
 channel_buffers = defaultdict(list)
 last_post_time = {}
+
 
 # -------------------------
 # Logging helper
@@ -40,12 +43,12 @@ def log_to_channel(context: CallbackContext, text: str):
     except Exception as e:
         logger.warning(f"⚠️ Logging failed: {e}")
 
+
 # -------------------------
 # Helpers
 # -------------------------
 def extract_chapter_number(text: str):
     """Accurately extracts chapter number from various filename formats."""
-    # Check for 'ch 12', 'chapter 12', 'ch.12', 'c12'
     match = re.search(r'(?:ch(?:apter)?\.?\s*|c\s*)(\d+(?:\.\d+)?)', text, re.IGNORECASE)
     if match:
         try:
@@ -53,7 +56,6 @@ def extract_chapter_number(text: str):
         except (ValueError, TypeError):
             pass
 
-    # Fallback to general number in filename
     match = re.search(r'\d{1,4}', text)
     return int(match.group()) if match else None
 
@@ -70,6 +72,64 @@ def build_post_link(channel_id: int, msg_id: int, invite_link: str = None):
     elif cid_str.startswith("-"):
         return f"https://t.me/c/{cid_str[1:]}/{msg_id}"
     return invite_link or "https://t.me"
+
+
+# -------------------------
+# 🔔 Auto New Chapter DM Notification Worker
+# -------------------------
+def notify_subscribers_async(bot, channel_id: int, manga_title: str, min_chap: int, max_chap: int, first_post_link: str, invite_link: str, image: str = None):
+    """Sends background DM alerts to all users subscribed to this manga."""
+    def task():
+        subscribers = get_manga_subscribers(channel_id)
+        if not subscribers:
+            logger.info(f"🔔 No subscribers to notify for {manga_title}")
+            return
+
+        if min_chap == max_chap:
+            chap_text = f"Chapter {min_chap}"
+        else:
+            chap_text = f"Chapters {min_chap}–{max_chap}"
+
+        safe_title = html.escape(manga_title)
+        alert_caption = (
+            f"🔔 <b>New Chapter Alert!</b> 🌌\n\n"
+            f"📚 <b>{safe_title}</b>\n"
+            f"📖 <a href='{first_post_link}'><b>{chap_text}</b></a> is now out! 🎉\n\n"
+            f"<i>Happy reading, senpai~</i> 💕"
+        )
+
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📖 Read in Channel", url=first_post_link or invite_link)],
+            [InlineKeyboardButton("🚀 Open in Manga Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))]
+        ])
+
+        sent_count = 0
+        for uid in subscribers:
+            try:
+                time.sleep(0.04)  # Rate-limit to avoid 429 FloodWait
+                if image:
+                    bot.send_photo(
+                        chat_id=uid,
+                        photo=image,
+                        caption=alert_caption,
+                        parse_mode="HTML",
+                        reply_markup=buttons
+                    )
+                else:
+                    bot.send_message(
+                        chat_id=uid,
+                        text=alert_caption,
+                        parse_mode="HTML",
+                        reply_markup=buttons,
+                        disable_web_page_preview=False
+                    )
+                sent_count += 1
+            except Exception as e:
+                pass  # Ignore blocked users or DM restrictions
+
+        logger.info(f"🔔 Notified {sent_count}/{len(subscribers)} subscribers for {manga_title} ({chap_text})")
+
+    threading.Thread(target=task, daemon=True).start()
 
 
 # -------------------------
@@ -214,7 +274,6 @@ def buffer_flusher(bot):
                 if min_chap == max_chap:
                     chapter_line = f"📖 <a href='{first_post_link}'>Chapter {min_chap}</a>"
                 else:
-                    # Hyperlinks the entire range to the FIRST uploaded chapter post (e.g. Ch 1 or Ch 6)
                     chapter_line = f"📖 <a href='{first_post_link}'>Chapters {min_chap}–{max_chap}</a>"
 
                 caption = f"📚 New chapter(s) of <b>{manga_title}</b>\n{chapter_line}"
@@ -243,6 +302,18 @@ def buffer_flusher(bot):
                         chap_num = item[0]
                         mark_chapter_posted(channel_id, chap_num)
                         logger.info(f"✅ Chapter {chap_num} marked as posted.")
+
+                    # 🔔 Trigger Auto DM Notification to all subscribed users!
+                    notify_subscribers_async(
+                        bot,
+                        channel_id=channel_id,
+                        manga_title=manga_title,
+                        min_chap=min_chap,
+                        max_chap=max_chap,
+                        first_post_link=first_post_link,
+                        invite_link=invite_link,
+                        image=image
+                    )
 
                 except Exception as e:
                     logger.exception(f"❌ Failed to post chapters {min_chap}–{max_chap} to update channel: {e}")

@@ -12,7 +12,14 @@ from database import (
     save_user_bookmark,
     remove_bookmark,
     mark_chapter_as_read,
-    read_log_col
+    read_log_col,
+    save_manga_rating,
+    get_manga_rating_summary,
+    get_manga_reviews,
+    subscribe_manga,
+    unsubscribe_manga,
+    is_user_subscribed,
+    get_user_subscriptions
 )
 from profile_handler import get_rank_title
 
@@ -61,7 +68,7 @@ def register_web_routes(app, bot_getter=None):
     # -------------------------------------------------------------
     # 🖼️ Image Proxy Endpoint (Resolves Telegram file_id)
     # -------------------------------------------------------------
-    @app.route("/api/image/<int:channel_id>")
+    @app.route("/api/image/<int(signed=True):channel_id>")
     def get_image_proxy(channel_id):
         manga = get_manga_by_id(channel_id)
         if not manga or not manga.get("image"):
@@ -83,7 +90,7 @@ def register_web_routes(app, bot_getter=None):
         return Response(DEFAULT_COVER_SVG, mimetype="image/svg+xml")
 
     # -------------------------------------------------------------
-    # 📦 API: Manga Catalog with User-Specific Status
+    # 📦 API: Manga Catalog with User-Specific Status & Ratings
     # -------------------------------------------------------------
     @app.route("/api/manga", methods=["GET"])
     def api_get_manga():
@@ -92,6 +99,7 @@ def register_web_routes(app, bot_getter=None):
 
         user_status_map = {}
         user_bookmarks_map = {}
+        user_subs_set = set()
 
         if user_id:
             user_lists = get_user_manga_lists(user_id)
@@ -106,6 +114,8 @@ def register_web_routes(app, bot_getter=None):
                 b_name = (b.get("manga") or b.get("name", "")).lower()
                 user_bookmarks_map[b_name] = b.get("chapter", "")
 
+            user_subs_set = set(get_user_subscriptions(user_id))
+
         all_manga = list(manga_col.find().sort("name", 1))
         catalog = []
 
@@ -115,6 +125,9 @@ def register_web_routes(app, bot_getter=None):
             has_image = bool(m.get("image"))
             image_url = f"/api/image/{cid}" if has_image else "/static/images/default_cover.svg"
 
+            # Get rating summary
+            rating_summary = get_manga_rating_summary(cid, user_id) if cid else {"avg_rating": 0.0, "total_ratings": 0}
+
             item = {
                 "channel_id": cid,
                 "name": name,
@@ -123,7 +136,11 @@ def register_web_routes(app, bot_getter=None):
                 "image_url": image_url,
                 "status": user_status_map.get(cid, []) if user_id else [],
                 "bookmark_chapter": user_bookmarks_map.get(name.lower(), None) if user_id else None,
-                "is_bookmarked": name.lower() in user_bookmarks_map if user_id else False
+                "is_bookmarked": name.lower() in user_bookmarks_map if user_id else False,
+                "is_subscribed": (cid in user_subs_set or (user_id and "favorite" in user_status_map.get(cid, []))),
+                "avg_rating": rating_summary.get("avg_rating", 0.0),
+                "total_ratings": rating_summary.get("total_ratings", 0),
+                "user_rating": rating_summary.get("user_rating")
             }
             catalog.append(item)
 
@@ -143,6 +160,7 @@ def register_web_routes(app, bot_getter=None):
         badges = get_user_badges(user_id)
         manga_lists = get_user_manga_lists(user_id)
         bookmarks = get_user_bookmarks(user_id)
+        subs = get_user_subscriptions(user_id)
 
         read_count = len(manga_lists.get("read", []))
         completed_count = len(manga_lists.get("completed", []))
@@ -176,6 +194,7 @@ def register_web_routes(app, bot_getter=None):
                 "favorites_count": fav_count,
                 "dropped_count": drop_count,
                 "hold_count": hold_count,
+                "subscriptions_count": len(subs),
                 "rank": rank_title,
                 "badges": badges,
                 "bookmarks": bookmarks,
@@ -269,3 +288,80 @@ def register_web_routes(app, bot_getter=None):
 
         remove_bookmark(user_id, manga_name)
         return jsonify({"success": True, "manga_name": manga_name})
+
+    # -------------------------------------------------------------
+    # ⭐ API: Rate Manga (1-5 Stars) & Optional Review
+    # -------------------------------------------------------------
+    @app.route("/api/rate", methods=["POST"])
+    def api_rate_manga():
+        data = request.get_json(silent=True) or {}
+        user_id = data.get("user_id")
+        user_name = data.get("user_name", "Anonymous")
+        channel_id = data.get("channel_id")
+        rating = data.get("rating")
+        review = data.get("review")
+
+        if not user_id or not channel_id or not rating:
+            return jsonify({"success": False, "error": "Missing user_id, channel_id, or rating"}), 400
+
+        try:
+            user_id = int(user_id)
+            channel_id = int(channel_id)
+            rating = int(rating)
+        except ValueError:
+            return jsonify({"success": False, "error": "Invalid numerical parameters"}), 400
+
+        save_manga_rating(user_id, user_name, channel_id, rating, review)
+        summary = get_manga_rating_summary(channel_id, user_id)
+
+        return jsonify({
+            "success": True,
+            "channel_id": channel_id,
+            "rating": rating,
+            "summary": summary
+        })
+
+    # -------------------------------------------------------------
+    # 📝 API: Get Reviews for a Manga
+    # -------------------------------------------------------------
+    @app.route("/api/reviews/<int(signed=True):channel_id>", methods=["GET"])
+    def api_get_reviews(channel_id):
+        reviews = get_manga_reviews(channel_id, limit=10)
+        summary = get_manga_rating_summary(channel_id)
+        return jsonify({
+            "success": True,
+            "channel_id": channel_id,
+            "summary": summary,
+            "reviews": reviews
+        })
+
+    # -------------------------------------------------------------
+    # 🔔 API: Toggle Chapter Alerts Subscription
+    # -------------------------------------------------------------
+    @app.route("/api/subscribe", methods=["POST"])
+    def api_toggle_subscribe():
+        data = request.get_json(silent=True) or {}
+        user_id = data.get("user_id")
+        channel_id = data.get("channel_id")
+        sub_action = data.get("subscribe", True)
+
+        if not user_id or not channel_id:
+            return jsonify({"success": False, "error": "Missing user_id or channel_id"}), 400
+
+        try:
+            user_id = int(user_id)
+            channel_id = int(channel_id)
+        except ValueError:
+            return jsonify({"success": False, "error": "Invalid IDs"}), 400
+
+        if sub_action:
+            subscribe_manga(user_id, channel_id)
+        else:
+            unsubscribe_manga(user_id, channel_id)
+
+        return jsonify({
+            "success": True,
+            "user_id": user_id,
+            "channel_id": channel_id,
+            "subscribed": sub_action
+        })
