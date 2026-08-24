@@ -492,24 +492,37 @@ function renderActiveShelf() {
     return;
   }
 
-  grid.innerHTML = items.map(m => `
-    <div class="manga-card">
-      <div class="poster-wrap">
-        <img src="${m.image_url}" alt="${escapeHtml(m.name)}" onerror="this.src='/static/images/default_cover.svg'">
-      </div>
-      <div class="card-details">
-        <h4 class="manga-title">${escapeHtml(m.name)}</h4>
-        <div class="card-actions">
-          <a href="${m.channel_link}" target="_blank" class="btn-read-channel">
-            <i class="fa-solid fa-book-open"></i> Read
-          </a>
-          <button class="btn-icon-action" style="width:100%;" onclick="removeShelfItem(${m.channel_id}, '${activeShelf}')">
-            <i class="fa-solid fa-trash-can"></i> Remove
-          </button>
+  grid.innerHTML = items.map(m => {
+    const chapCount = m.total_chapters ? `Ch. ${m.total_chapters}` : 'Ongoing';
+    const bmBadge = m.is_bookmarked && m.bookmark_chapter ? `<span class="bookmark-tag">Ch. ${m.bookmark_chapter}</span>` : '';
+    const readChap = m.bookmark_chapter || 1;
+
+    return `
+      <div class="manga-card" data-cid="${m.channel_id}">
+        <div class="poster-wrap">
+          <img src="${m.image_url}" alt="${escapeHtml(m.name)}" loading="lazy" onerror="this.src='/static/images/default_cover.svg'">
+          <span class="badge-chapters">${chapCount}</span>
+          ${bmBadge}
+        </div>
+        <div class="card-details">
+          <h4 class="manga-title" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</h4>
+          <div class="card-actions">
+            <div class="btn-read-row">
+              <a href="/reader?cid=${m.channel_id}&ch=${readChap}&user_id=${currentUserId}" class="btn-read-online">
+                <i class="fa-solid fa-bolt"></i> Read Online
+              </a>
+              <a href="${m.channel_link}" target="_blank" class="btn-read-channel" title="Telegram Channel">
+                <i class="fa-brands fa-telegram"></i>
+              </a>
+            </div>
+            <button class="btn-icon-action" style="width:100%;" onclick="removeShelfItem(${m.channel_id}, '${activeShelf}')">
+              <i class="fa-solid fa-trash-can"></i> Remove from Shelf
+            </button>
+          </div>
         </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 async function removeShelfItem(channelId, shelfKey) {
