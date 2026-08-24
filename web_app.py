@@ -201,6 +201,7 @@ def register_web_routes(app, bot_getter=None):
 
         # Hydrate manga lists with titles, links, and bookmark chapters
         bms_map = { (b.get("manga") or b.get("name", "")).lower(): b.get("chapter") for b in bookmarks }
+        user_ratings_map = { r["channel_id"]: r["rating"] for r in ratings_col.find({"user_id": user_id}, {"channel_id": 1, "rating": 1}) }
         hydrated_shelves = {}
         for shelf_name, cids in manga_lists.items():
             hydrated_shelves[shelf_name] = []
@@ -216,7 +217,11 @@ def register_web_routes(app, bot_getter=None):
                         "image_url": f"/api/image/{cid}" if manga.get("image") else "/static/images/default_cover.svg",
                         "total_chapters": manga.get("total_chapters"),
                         "bookmark_chapter": bm_chap,
-                        "is_bookmarked": bool(bm_chap)
+                        "is_bookmarked": bool(bm_chap),
+                        "is_subscribed": cid in subs,
+                        "is_favorite": cid in manga_lists.get("favorite", []),
+                        "is_read": cid in manga_lists.get("read", []),
+                        "user_rating": user_ratings_map.get(cid, 5)
                     })
 
         return jsonify({

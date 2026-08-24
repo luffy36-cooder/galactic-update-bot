@@ -316,6 +316,13 @@ async function submitRating() {
         m.total_ratings = data.summary.total_ratings;
         m.user_rating = selectedRatingValue;
       }
+      if (typeof profileShelves !== 'undefined') {
+        Object.values(profileShelves).forEach(shelfList => {
+          const item = shelfList.find(x => x.channel_id === selectedRatingChannelId);
+          if (item) item.user_rating = selectedRatingValue;
+        });
+        renderActiveShelf();
+      }
       closeRateModal();
       filterAndRenderCatalog();
       showToast(`⭐ Rated ${selectedRatingValue}/5 stars! Thank you!`);
@@ -415,6 +422,16 @@ async function submitBookmark() {
       if (m) {
         m.is_bookmarked = true;
         m.bookmark_chapter = chap;
+      }
+      if (typeof profileShelves !== 'undefined') {
+        Object.values(profileShelves).forEach(shelfList => {
+          const item = shelfList.find(x => x.name.toLowerCase() === selectedBookmarkManga.toLowerCase());
+          if (item) {
+            item.is_bookmarked = true;
+            item.bookmark_chapter = chap;
+          }
+        });
+        renderActiveShelf();
       }
       closeBookmarkModal();
       filterAndRenderCatalog();
@@ -534,7 +551,11 @@ function renderActiveShelf() {
 
   grid.innerHTML = items.map(m => {
     const chapCount = m.total_chapters ? `Ch. ${m.total_chapters}` : 'Ongoing';
-    const bmBadge = m.is_bookmarked && m.bookmark_chapter ? `<span class="bookmark-tag">Ch. ${m.bookmark_chapter}</span>` : '';
+    const isBm = Boolean(m.is_bookmarked);
+    const isSub = Boolean(m.is_subscribed);
+    const isFav = Boolean(m.is_favorite);
+    const isRead = Boolean(m.is_read);
+    const bmBadge = isBm && m.bookmark_chapter ? `<span class="bookmark-tag">Ch. ${m.bookmark_chapter}</span>` : '';
     const readChap = m.bookmark_chapter || 1;
 
     return `
@@ -555,7 +576,24 @@ function renderActiveShelf() {
                 <i class="fa-brands fa-telegram"></i>
               </button>
             </div>
-            <button class="btn-icon-action" style="width:100%;" onclick="removeShelfItem(${m.channel_id}, '${activeShelf}')">
+            <div class="status-actions-row">
+              <button class="btn-icon-action ${isSub ? 'active-sub' : ''}" onclick="toggleShelfSubscribe(${m.channel_id}, ${!isSub})" title="Auto Chapter Alert">
+                <i class="${isSub ? 'fa-solid' : 'fa-regular'} fa-bell"></i>
+              </button>
+              <button class="btn-icon-action ${isFav ? 'active-fav' : ''}" onclick="toggleShelfStatus(${m.channel_id}, 'favorite', ${!isFav})" title="Favorite">
+                <i class="${isFav ? 'fa-solid' : 'fa-regular'} fa-heart"></i>
+              </button>
+              <button class="btn-icon-action ${isRead ? 'active-read' : ''}" onclick="toggleShelfStatus(${m.channel_id}, 'read', ${!isRead})" title="Mark Read">
+                <i class="fa-solid fa-check"></i>
+              </button>
+              <button class="btn-icon-action ${isBm ? 'active-bm' : ''}" onclick="openBookmarkModal('${escapeHtml(m.name)}', ${m.bookmark_chapter || ''})" title="Bookmark">
+                <i class="${isBm ? 'fa-solid' : 'fa-regular'} fa-bookmark"></i>
+              </button>
+              <button class="btn-icon-action" onclick="openRateModal(${m.channel_id}, '${escapeHtml(m.name)}', ${m.user_rating || 5})" title="Rate Manga">
+                <i class="fa-solid fa-star" style="color:#fbbf24;"></i>
+              </button>
+            </div>
+            <button class="btn-icon-action" style="width:100%; margin-top:2px;" onclick="removeShelfItem(${m.channel_id}, '${activeShelf}')">
               <i class="fa-solid fa-trash-can"></i> Remove from Shelf
             </button>
           </div>
@@ -563,6 +601,70 @@ function renderActiveShelf() {
       </div>
     `;
   }).join('');
+}
+
+async function toggleShelfSubscribe(channelId, subAction) {
+  hapticFeedback('impact');
+  // Update all occurrences in all shelves
+  Object.values(profileShelves).forEach(shelfList => {
+    const item = shelfList.find(m => m.channel_id === channelId);
+    if (item) item.is_subscribed = subAction;
+  });
+  renderActiveShelf();
+
+  try {
+    const res = await fetch('/api/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: currentUserId,
+        channel_id: channelId,
+        subscribe: subAction
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(subAction ? '🔔 Subscribed to new chapter alerts!' : '🔕 Unsubscribed');
+      hapticFeedback('notification');
+    }
+  } catch (err) {
+    console.error('Failed to toggle subscription in profile:', err);
+    showToast('Failed to sync subscription');
+  }
+}
+
+async function toggleShelfStatus(channelId, statusKey, add) {
+  hapticFeedback('impact');
+
+  // Update in profile state
+  Object.values(profileShelves).forEach(shelfList => {
+    const item = shelfList.find(m => m.channel_id === channelId);
+    if (item) {
+      if (statusKey === 'favorite') item.is_favorite = add;
+      if (statusKey === 'read') item.is_read = add;
+    }
+  });
+
+  renderActiveShelf();
+
+  try {
+    const res = await fetch('/api/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: currentUserId,
+        channel_id: channelId,
+        status: statusKey,
+        add: add
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(add ? `Added to ${statusKey}` : `Removed from ${statusKey}`);
+    }
+  } catch (err) {
+    console.error('Failed to update shelf status:', err);
+  }
 }
 
 async function removeShelfItem(channelId, shelfKey) {
