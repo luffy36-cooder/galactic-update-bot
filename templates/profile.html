@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Reader Profile — Manga Galactic</title>
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="profile-page">
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="brand">
+      <a href="/web" class="btn-back"><i class="fa-solid fa-arrow-left"></i></a>
+      <div>
+        <h1>Reader Profile</h1>
+        <p class="subtitle">Galactic Statistics & Shelves</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <a href="/web" class="btn-profile-icon" title="Browse Catalog">
+        <i class="fa-solid fa-compass"></i>
+      </a>
+    </div>
+  </header>
+
+  <main class="profile-container" id="profileMain">
+    <!-- User Profile Hero Card -->
+    <section class="profile-hero-card">
+      <div class="profile-avatar-wrap">
+        <div class="avatar-ring">
+          <img id="profileAvatar" src="https://api.dicebear.com/7.x/bottts/svg?seed=Reader" alt="Avatar">
+        </div>
+        <div class="rank-tag" id="profileRankBadge">
+          <i class="fa-solid fa-crown"></i> <span id="profileRankText">Reader</span>
+        </div>
+      </div>
+      <div class="profile-info">
+        <h2 id="profileName">Loading User...</h2>
+        <p class="user-handle" id="profileUsername">@username</p>
+        <div class="user-badges-list" id="profileBadges">
+          <!-- Dynamic Badges -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Reading Statistics Metrics Grid -->
+    <section class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-icon read-icon"><i class="fa-solid fa-book-open"></i></div>
+        <div class="metric-value" id="statRead">0</div>
+        <div class="metric-label">Chapters Read</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon bookmark-icon"><i class="fa-solid fa-bookmark"></i></div>
+        <div class="metric-value" id="statBookmarks">0</div>
+        <div class="metric-label">Bookmarks</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon fav-icon"><i class="fa-solid fa-heart"></i></div>
+        <div class="metric-value" id="statFavorites">0</div>
+        <div class="metric-label">Favorites</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-icon comp-icon"><i class="fa-solid fa-flag-checkered"></i></div>
+        <div class="metric-value" id="statCompleted">0</div>
+        <div class="metric-label">Completed</div>
+      </div>
+    </section>
+
+    <!-- Shelves Section -->
+    <section class="shelves-section">
+      <div class="section-title-bar">
+        <h3><i class="fa-solid fa-layer-group"></i> My Reading Shelves</h3>
+      </div>
+
+      <!-- Shelf Tabs -->
+      <div class="shelf-tabs">
+        <button class="shelf-tab active" data-shelf="read"><i class="fa-solid fa-check"></i> Read</button>
+        <button class="shelf-tab" data-shelf="favorite"><i class="fa-solid fa-heart"></i> Favs</button>
+        <button class="shelf-tab" data-shelf="completed"><i class="fa-solid fa-flag-checkered"></i> Done</button>
+        <button class="shelf-tab" data-shelf="hold"><i class="fa-solid fa-pause"></i> Hold</button>
+        <button class="shelf-tab" data-shelf="dropped"><i class="fa-solid fa-hand"></i> Dropped</button>
+      </div>
+
+      <!-- Shelf Items Grid -->
+      <div class="shelf-items-grid" id="shelfGrid">
+        <div class="empty-shelf">Loading your shelf...</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Profile Script -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

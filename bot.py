@@ -6,11 +6,14 @@ from telegram.ext import (
     Updater,
     CommandHandler,
     MessageHandler,
-    Filters,
     CallbackQueryHandler,
     InlineQueryHandler,
     ChatMemberHandler,
 )
+try:
+    from telegram.ext import Filters
+except ImportError:
+    from telegram.ext import filters as Filters
 from config import BOT_TOKEN
 
 # 💫 Core Handlers
@@ -22,6 +25,10 @@ from mode_handler import set_mode_cmd
 from leaderboard_handler import leaderboard_cmd
 from recommend_handler import recommend_cmd
 from listmanga_handler import register_listmanga_handlers
+
+# 🌐 Web Mini App Handlers
+from web_handlers import web_cmd, webprofile_cmd
+from web_app import register_web_routes
 
 # 🔧 Admin Handlers
 from admin_handlers import (
@@ -86,11 +93,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+bot_instance = None
+
+
+def get_bot():
+    return bot_instance
+
 
 # 🚀 Bot launch function
 def main():
+    global bot_instance
     # Use 8 concurrent workers for maximum speed and throughput
     updater = Updater(BOT_TOKEN, use_context=True, workers=8)
+    bot_instance = updater.bot
     dp = updater.dispatcher
 
     # Start chapter buffer flusher in background
@@ -98,6 +113,11 @@ def main():
 
     # Register list manga pagination handlers
     register_listmanga_handlers(dp)
+
+    # 🌐 Web Mini App Commands
+    dp.add_handler(CommandHandler("web", web_cmd))
+    dp.add_handler(CommandHandler("mangaweb", web_cmd))
+    dp.add_handler(CommandHandler("webprofile", webprofile_cmd))
 
     # ✅ Basic User Commands
     dp.add_handler(CommandHandler("start", start_cmd))
@@ -175,12 +195,13 @@ def main():
     updater.idle()
 
 
-# 🌐 Flask server for Render/Koyeb keep-alive
+# 🌐 Flask server for Render/Koyeb keep-alive & Web Mini App
 app = Flask(__name__)
+register_web_routes(app, get_bot)
 
 @app.route("/")
 def home():
-    return "Galactic Bot is alive and running smoothly! 🌌🚀"
+    return "Galactic Bot is alive and running smoothly! 🌌🚀 Visit /web for Manga Mini App."
 
 if __name__ == "__main__":
     threading.Thread(target=main, name="BotThread", daemon=True).start()

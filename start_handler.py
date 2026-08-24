@@ -1,9 +1,10 @@
-import random, json
+import random
+import json
 from datetime import datetime
 from pytz import timezone
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from telegram.ext import CallbackContext
-from config import LOG_CHANNEL_ID
+from config import LOG_CHANNEL_ID, WEB_APP_URL
 
 # Load quotes and facts
 with open("anime_quotes.json", encoding="utf-8") as f:
@@ -53,14 +54,16 @@ def start_cmd(update: Update, context: CallbackContext):
     )
 
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🧰 Commands", callback_data="help_search"),
-         InlineKeyboardButton("🎛 Dashboard", callback_data="help_admin")],
+        [InlineKeyboardButton("🚀 Launch Manga Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))],
+        [InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile")),
+         InlineKeyboardButton("🧰 Commands", callback_data="help_search")],
         [InlineKeyboardButton("📚 My List", callback_data="help_lists"),
          InlineKeyboardButton("📌 Bookmarks", callback_data="help_bookmarks")],
         [InlineKeyboardButton("🔍 Search", switch_inline_query_current_chat=""),
          InlineKeyboardButton("🌟 Recommend", callback_data="help_recommend"),
          InlineKeyboardButton("🥇 Leaderboard", callback_data="help_leaderboard")],
-        [InlineKeyboardButton("📊 Stats", callback_data="help_stats")]
+        [InlineKeyboardButton("📊 Stats", callback_data="help_stats"),
+         InlineKeyboardButton("🎛 Dashboard", callback_data="help_admin")]
     ])
 
     if update.message:
