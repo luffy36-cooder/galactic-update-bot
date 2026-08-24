@@ -3,6 +3,7 @@ import logging
 from flask import request, jsonify, render_template, redirect, Response, send_file
 from database import (
     manga_col,
+    ratings_col,
     get_manga_by_id,
     get_user_manga_status,
     get_user_manga_lists,
