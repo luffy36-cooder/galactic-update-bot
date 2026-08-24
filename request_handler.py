@@ -110,8 +110,7 @@ def request_manga(update: Update, context: CallbackContext):
                 m_link = match_manga.get("channel_link") or (f"https://t.me/c/{str(m_cid)[4:]}/1" if m_cid else "https://t.me")
 
                 buttons = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📖 Read in Channel", url=m_link)],
-                    [InlineKeyboardButton("🚀 Open in Manga Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))]
+                    [InlineKeyboardButton("📖 Read in Channel", url=m_link)]
                 ])
 
                 update.message.reply_text(

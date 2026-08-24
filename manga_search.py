@@ -100,47 +100,44 @@ def _send_single_manga(update_or_query, result: dict):
     if user_rat:
         stars_str += f" • <i>Your rating: {user_rat}★</i>"
 
-    # Determine if chat is private
-    chat = getattr(update_or_query, 'effective_chat', None) or getattr(getattr(update_or_query, 'message', None), 'chat', None)
-    is_private = (chat.type == 'private') if chat else True
-
     # Action buttons
     channel_link = result.get("channel_link") or (f"https://t.me/c/{str(cid)[4:]}/1" if cid else "https://t.me")
-    reader_url = f"{WEB_APP_URL}/reader?cid={cid}&ch=1&user_id={user_id}"
-    profile_url = f"{WEB_APP_URL}/webprofile"
-
-    if is_private:
-        read_btn = InlineKeyboardButton("🚀 Read Online (App)", web_app=WebAppInfo(url=reader_url))
-        profile_btn = InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=profile_url))
-    else:
-        read_btn = InlineKeyboardButton("🚀 Read Online (App)", url=reader_url)
-        profile_btn = InlineKeyboardButton("👤 Web Profile", url=profile_url)
-
     buttons = [
         [
             InlineKeyboardButton("📖 Read in Channel", url=channel_link),
-            read_btn
+            InlineKeyboardButton(f"{'🔕 Subscribed' if is_sub else '🔔 Subscribe'}", callback_data=f"subtoggle_{cid}_{user_id}")
         ],
         [
-            InlineKeyboardButton(f"{'🔕 Subscribed' if is_sub else '🔔 Subscribe'}", callback_data=f"subtoggle_{cid}_{user_id}"),
             InlineKeyboardButton("⭐ Rate (1-5★)", callback_data=f"showrate_{cid}_{user_id}")
         ]
     ]
 
     status_buttons = [
-        ("read", "✅ Mark Read", "❌ Unread"),
         ("favorite", "❤️ Favorite", "💔 Unfavorite"),
+        ("read", "✅ Mark Read", "❌ Unread"),
         ("completed", "🏁 Completed", "🚫 Uncompleted"),
         ("hold", "⏸️ On Hold", "🔄 Unhold"),
         ("dropped", "👋 Drop", "♻️ Undrop")
     ]
 
-    # Grid of status buttons (2 per row)
+    # Add favorite to row 2 next to Rate
+    is_fav_active = "favorite" in status
+    fav_display = "💔 Unfavorite" if is_fav_active else "❤️ Favorite"
+    fav_action = "unfav" if is_fav_active else "fav"
+    buttons[1].append(InlineKeyboardButton(fav_display, callback_data=f"{fav_action}_{cid}_{user_id}"))
+
+    # Remaining status buttons in 2-column rows
+    remaining_status = [
+        ("read", "✅ Mark Read", "❌ Unread"),
+        ("completed", "🏁 Completed", "🚫 Uncompleted"),
+        ("hold", "⏸️ On Hold", "🔄 Unhold"),
+        ("dropped", "👋 Drop", "♻️ Undrop")
+    ]
+
     row = []
-    for stat, add_text, remove_text in status_buttons:
+    for stat, add_text, remove_text in remaining_status:
         is_active = stat in status
         action_map = {
-            "favorite": "fav" if not is_active else "unfav",
             "completed": "complete" if not is_active else "uncomplete",
             "dropped": "drop" if not is_active else "undrop",
             "hold": "hold" if not is_active else "unhold",
@@ -153,9 +150,6 @@ def _send_single_manga(update_or_query, result: dict):
         if len(row) == 2:
             buttons.append(row)
             row = []
-    if row:
-        row.append(profile_btn)
-        buttons.append(row)
 
     keyboard = InlineKeyboardMarkup(buttons)
     safe_name = html.escape(result.get("name", "Manga").title())

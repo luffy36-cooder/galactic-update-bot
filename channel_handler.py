@@ -100,8 +100,7 @@ def notify_subscribers_async(bot, channel_id: int, manga_title: str, min_chap: i
         )
 
         buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📖 Read in Channel", url=first_post_link or invite_link)],
-            [InlineKeyboardButton("🚀 Open in Manga Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))]
+            [InlineKeyboardButton("📖 Read in Channel", url=first_post_link or invite_link)]
         ])
 
         sent_count = 0

@@ -151,15 +151,7 @@ def help_cmd(update: Update, context: CallbackContext):
         "• <code>/broadcast</code> & <code>/dmbroadcast</code> — Announce updates"
     )
 
-    if is_private:
-        web_btn = InlineKeyboardButton("🚀 Launch Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))
-        profile_btn = InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))
-    else:
-        web_btn = InlineKeyboardButton("🚀 Launch Web App", url=f"https://t.me/{bot_username}?start=web")
-        profile_btn = InlineKeyboardButton("👤 Web Profile", url=f"https://t.me/{bot_username}?start=webprofile")
-
     buttons = InlineKeyboardMarkup([
-        [web_btn, profile_btn],
         [
             InlineKeyboardButton("🔍 Search Guide", callback_data="help_search"),
             InlineKeyboardButton("📌 Bookmarks Guide", callback_data="help_bookmarks")
@@ -185,8 +177,6 @@ def help_cmd(update: Update, context: CallbackContext):
 def help_button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
-    bot_username = context.bot.username or "Galactic_Update_bot"
-    is_private = update.effective_chat.type == "private" if update.effective_chat else True
 
     section_texts = {
         "help_search": (
@@ -244,14 +234,8 @@ def help_button_handler(update: Update, context: CallbackContext):
     }
 
     text = section_texts.get(query.data, "❓ Unknown help section.")
-    
-    if is_private:
-        web_btn = InlineKeyboardButton("🚀 Launch Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))
-    else:
-        web_btn = InlineKeyboardButton("🚀 Launch Web App", url=f"https://t.me/{bot_username}?start=web")
-
     back_button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Back to Main Help", callback_data="help_main"), web_btn]
+        [InlineKeyboardButton("🔙 Back to Main Help", callback_data="help_main")]
     ])
 
     if query.data == "help_main":

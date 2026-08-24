@@ -8,6 +8,8 @@ def web_cmd(update: Update, context: CallbackContext):
     """Sends the Manga Galactic Web Mini App launch button."""
     user = update.effective_user
     name = html.escape(user.first_name or "Reader")
+    bot_username = context.bot.username or "Galactic_Update_bot"
+    is_private = update.effective_chat.type == "private" if update.effective_chat else True
 
     text = (
         f"🌌 <b>Manga Galactic Web Mini App</b> 🛸\n\n"
@@ -20,23 +22,29 @@ def web_cmd(update: Update, context: CallbackContext):
         f"<i>Tap the button below to launch the Web App!</i> 👇"
     )
 
-    web_url = f"{WEB_APP_URL}/web"
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚀 Launch Manga Galactic", web_app=WebAppInfo(url=web_url))],
-        [InlineKeyboardButton("👤 Open Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))]
-    ])
+    if is_private:
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚀 Launch Manga Galactic", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))],
+            [InlineKeyboardButton("👤 Open Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))]
+        ])
+    else:
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚀 Launch Manga Galactic", url=f"https://t.me/{bot_username}?start=web")],
+            [InlineKeyboardButton("👤 Open Web Profile", url=f"https://t.me/{bot_username}?start=webprofile")]
+        ])
 
-    update.message.reply_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=buttons
-    )
+    if update.message:
+        update.message.reply_text(text, parse_mode="HTML", reply_markup=buttons)
+    elif update.effective_chat:
+        update.effective_chat.send_message(text, parse_mode="HTML", reply_markup=buttons)
 
 
 def webprofile_cmd(update: Update, context: CallbackContext):
     """Sends the Web Profile launch button."""
     user = update.effective_user
     name = html.escape(user.first_name or "Reader")
+    bot_username = context.bot.username or "Galactic_Update_bot"
+    is_private = update.effective_chat.type == "private" if update.effective_chat else True
 
     text = (
         f"👤 <b>Your Galactic Reader Profile (Web Edition)</b> 🌟\n\n"
@@ -44,14 +52,18 @@ def webprofile_cmd(update: Update, context: CallbackContext):
         f"<i>Tap below to open your profile in the Web Mini App!</i> 👇"
     )
 
-    profile_url = f"{WEB_APP_URL}/webprofile"
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("👤 Open Web Profile", web_app=WebAppInfo(url=profile_url))],
-        [InlineKeyboardButton("📚 Browse Manga Catalog", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))]
-    ])
+    if is_private:
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("👤 Open Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))],
+            [InlineKeyboardButton("📚 Browse Manga Catalog", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))]
+        ])
+    else:
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("👤 Open Web Profile", url=f"https://t.me/{bot_username}?start=webprofile")],
+            [InlineKeyboardButton("📚 Browse Manga Catalog", url=f"https://t.me/{bot_username}?start=web")]
+        ])
 
-    update.message.reply_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=buttons
-    )
+    if update.message:
+        update.message.reply_text(text, parse_mode="HTML", reply_markup=buttons)
+    elif update.effective_chat:
+        update.effective_chat.send_message(text, parse_mode="HTML", reply_markup=buttons)
