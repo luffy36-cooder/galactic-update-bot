@@ -57,14 +57,16 @@
       <div class="loader-progress-bar"><div class="progress-fill" id="loadProgress"></div></div>
     </div>
 
-    <!-- Error / Fallback Card -->
+    <!-- Archive / Telegram Fallback Card -->
     <div id="readerErrorState" class="reader-error-card" style="display:none;">
-      <i class="fa-solid fa-circle-exclamation error-icon"></i>
-      <h3>Chapter Stream Unavailable</h3>
-      <p id="readerErrorMsg">This chapter's PDF is stored directly in the channel.</p>
-      <a href="#" id="errorChannelLink" target="_blank" class="btn btn-primary" style="margin-top: 14px;">
-        <i class="fa-solid fa-telegram"></i> Open & Read in Telegram Channel
-      </a>
+      <div class="channel-stream-icon">
+        <i class="fa-brands fa-telegram"></i>
+      </div>
+      <h3 id="readerErrorTitle">Chapter in Telegram Channel</h3>
+      <p id="readerErrorMsg">This chapter's PDF is archived in the official channel. Tap below to jump directly to the post.</p>
+      <button id="errorChannelLink" class="btn btn-primary btn-tg-stream" style="margin-top: 16px; width: 100%;">
+        <i class="fa-brands fa-telegram"></i> Open in Telegram Channel
+      </button>
     </div>
 
     <!-- Webtoon Mode Continuous Canvas Container -->
