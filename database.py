@@ -201,13 +201,19 @@ def search_manga_by_name(query: str, limit: int = 5, cutoff: int = 55):
     if exact:
         return [exact]
 
-    # 🥈 Step 2: In-memory fuzzy search
+    # 🥈 Step 2: In-memory fuzzy search using token_set_ratio for precise title match
     names = [m.get("name", "") for m in all_manga if m.get("name")]
     if not names:
         return []
 
-    matches = process.extract(clean_query, names, scorer=fuzz.WRatio, limit=limit)
+    # Score using token_set_ratio which prioritizes full title word matches over partial substring length
+    matches = process.extract(clean_query, names, scorer=fuzz.token_set_ratio, limit=limit)
     valid_matches = [m for m in matches if m[1] >= cutoff]
+
+    if not valid_matches:
+        # Fallback to token_sort_ratio
+        matches = process.extract(clean_query, names, scorer=fuzz.token_sort_ratio, limit=limit)
+        valid_matches = [m for m in matches if m[1] >= cutoff]
 
     if not valid_matches:
         return []

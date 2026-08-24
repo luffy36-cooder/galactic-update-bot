@@ -105,9 +105,46 @@ def handle_bookmark_buttons(update: Update, context: CallbackContext):
     user_id = query.from_user.id
     data = query.data
 
+    # Handle Back to Bookmarks list button
+    if data.startswith("bm_list_"):
+        parts = data.split("_")
+        owner_id = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else user_id
+        if user_id != owner_id:
+            return query.answer("👀 This isn't your bookmark list.", show_alert=True)
+        
+        bookmarks = get_user_bookmarks(user_id)
+        if not bookmarks:
+            msg_text = "📖 You have no bookmarks saved yet! Use <code>/bookmark &lt;manga&gt; &lt;chapter&gt;</code> to add one."
+            try:
+                query.edit_message_text(msg_text, parse_mode="HTML")
+            except Exception:
+                try:
+                    query.message.delete()
+                    context.bot.send_message(chat_id=query.message.chat_id, text=msg_text, parse_mode="HTML")
+                except Exception:
+                    pass
+            return
+
+        buttons = []
+        for idx, entry in enumerate(bookmarks):
+            manga_name = entry.get("manga") or entry.get("name") or "Unknown"
+            chap = entry.get("chapter", "-")
+            label = f"{manga_name} (Ch. {chap})"
+            buttons.append([InlineKeyboardButton(label, callback_data=f"bm_view_{idx}_{user_id}")])
+
+        msg_text = "📚 <b>Your Saved Bookmarks:</b>\nTap any title to view details or remove it."
+        try:
+            query.edit_message_text(msg_text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+        except Exception:
+            try:
+                query.message.delete()
+                context.bot.send_message(chat_id=query.message.chat_id, text=msg_text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+            except Exception:
+                pass
+        return
+
     parts = data.split("_")
     if len(parts) < 4:
-        # Handle legacy or malformed format
         return
 
     action = f"{parts[0]}_{parts[1]}"  # bm_view or bm_remove
@@ -122,22 +159,37 @@ def handle_bookmark_buttons(update: Update, context: CallbackContext):
         return
 
     bookmarks = get_user_bookmarks(user_id)
-    if idx >= len(bookmarks):
-        query.edit_message_text("⚠️ This bookmark is no longer available. Try /mybookmarks again.")
-        return
-
-    target_bm = bookmarks[idx]
-    manga_name = target_bm.get("manga") or target_bm.get("name", "Unknown")
-    chapter = target_bm.get("chapter", "-")
 
     if action == "bm_remove":
-        remove_bookmark(user_id, manga_name)
+        if idx < len(bookmarks):
+            manga_name = bookmarks[idx].get("manga") or bookmarks[idx].get("name", "Unknown")
+            remove_bookmark(user_id, manga_name)
+            remove_text = f"🗑️ Removed bookmark for <b>{html.escape(manga_name)}</b>."
+        else:
+            remove_text = "🗑️ Bookmark removed."
+        
+        back_btn = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Back to Bookmarks", callback_data=f"bm_list_{user_id}")]
+        ])
         try:
-            query.edit_message_text(f"🗑️ Removed bookmark for <b>{html.escape(manga_name)}</b>.", parse_mode="HTML")
+            query.edit_message_text(remove_text, parse_mode="HTML", reply_markup=back_btn)
         except Exception:
-            pass
+            try:
+                query.message.delete()
+                context.bot.send_message(chat_id=query.message.chat_id, text=remove_text, parse_mode="HTML", reply_markup=back_btn)
+            except Exception:
+                pass
+        return
 
     elif action == "bm_view":
+        if idx >= len(bookmarks):
+            query.edit_message_text("⚠️ This bookmark is no longer available. Try /mybookmarks again.")
+            return
+
+        target_bm = bookmarks[idx]
+        manga_name = target_bm.get("manga") or target_bm.get("name", "Unknown")
+        chapter = target_bm.get("chapter", "-")
+
         manga_list = search_manga_by_name(manga_name)
         manga = manga_list[0] if manga_list else None
 
@@ -163,8 +215,13 @@ def handle_bookmark_buttons(update: Update, context: CallbackContext):
         )
 
         buttons = [
-            [InlineKeyboardButton(f"📖 Read Chapter {chapter}", url=direct_link)],
-            [InlineKeyboardButton("❌ Remove Bookmark", callback_data=f"bm_remove_{idx}_{user_id}")]
+            [
+                InlineKeyboardButton(f"📖 Read Ch. {chapter}", url=direct_link),
+                InlineKeyboardButton("❌ Remove", callback_data=f"bm_remove_{idx}_{user_id}")
+            ],
+            [
+                InlineKeyboardButton("🔙 Back to Bookmarks", callback_data=f"bm_list_{user_id}")
+            ]
         ]
 
         try:
