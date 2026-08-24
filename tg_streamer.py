@@ -4,6 +4,7 @@ import threading
 import asyncio
 import logging
 from telethon import TelegramClient
+from telethon.sessions import MemorySession
 from config import API_ID, API_HASH, BOT_TOKEN
 from database import save_chapter_file, manga_col
 from channel_handler import extract_chapter_number
@@ -26,7 +27,7 @@ class MTProtoStreamer:
     def _worker(self):
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
-        self.client = TelegramClient("galactic_streamer", API_ID, API_HASH, loop=self.loop)
+        self.client = TelegramClient(MemorySession(), API_ID, API_HASH, loop=self.loop)
 
         async def _connect():
             await self.client.start(bot_token=BOT_TOKEN)
