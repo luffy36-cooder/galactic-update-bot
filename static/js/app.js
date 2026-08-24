@@ -188,9 +188,9 @@ function createMangaCardHtml(item) {
             <a href="/reader?cid=${item.channel_id}&ch=${item.bookmark_chapter || 1}&user_id=${currentUserId}" class="btn-read-online">
               <i class="fa-solid fa-bolt"></i> Read Online
             </a>
-            <a href="${item.channel_link}" target="_blank" class="btn-read-channel" title="Open Telegram Channel">
+            <button class="btn-read-channel" onclick="openTgLink('${item.channel_link}', event)" title="Open Telegram Channel">
               <i class="fa-brands fa-telegram"></i>
-            </a>
+            </button>
           </div>
           <div class="status-actions-row">
             <button class="btn-icon-action ${isSub ? 'active-sub' : ''}" onclick="toggleSubscribe(${item.channel_id}, ${!isSub})" title="Auto Chapter Alert">
@@ -468,17 +468,57 @@ async function initProfilePage() {
       document.getElementById('statCompleted').textContent = p.completed_count;
       document.getElementById('profileRankText').textContent = p.rank;
 
+      // Calculate Gamified Level & XP
+      const readCount = p.read_count || 0;
+      const level = Math.floor(readCount / 5) + 1;
+      const xpCurrent = readCount % 5;
+      const xpPercent = Math.round((xpCurrent / 5) * 100);
+
+      const titles = ["Novice", "Apprentice", "Explorer", "Bookworm", "Manga Sage", "Grandmaster", "Galactic Sovereign"];
+      const currentTitle = titles[Math.min(level - 1, titles.length - 1)];
+
+      const levelEl = document.getElementById('profileLevelText');
+      const xpTextEl = document.getElementById('profileXpText');
+      const xpFillEl = document.getElementById('profileXpFill');
+
+      if (levelEl) levelEl.textContent = `Level ${level} • ${currentTitle}`;
+      if (xpTextEl) xpTextEl.textContent = `${xpCurrent} / 5 Chapters`;
+      if (xpFillEl) xpFillEl.style.width = `${Math.max(12, xpPercent)}%`;
+
       const badgesEl = document.getElementById('profileBadges');
       if (badgesEl && p.badges) {
         badgesEl.textContent = p.badges.join(' ');
       }
 
       profileShelves = p.shelves || {};
+
+      // Populate Shelf Counters
+      updateShelfTabCounters();
       renderActiveShelf();
     }
   } catch (err) {
     console.error('Failed to load profile:', err);
   }
+}
+
+function updateShelfTabCounters() {
+  const readCount = (profileShelves.read || []).length;
+  const favCount = (profileShelves.favorite || []).length;
+  const compCount = (profileShelves.completed || []).length;
+  const holdCount = (profileShelves.hold || []).length;
+  const dropCount = (profileShelves.dropped || []).length;
+
+  const elRead = document.getElementById('countRead');
+  const elFav = document.getElementById('countFav');
+  const elComp = document.getElementById('countComp');
+  const elHold = document.getElementById('countHold');
+  const elDrop = document.getElementById('countDrop');
+
+  if (elRead) elRead.textContent = readCount;
+  if (elFav) elFav.textContent = favCount;
+  if (elComp) elComp.textContent = compCount;
+  if (elHold) elHold.textContent = holdCount;
+  if (elDrop) elDrop.textContent = dropCount;
 }
 
 function renderActiveShelf() {
@@ -511,9 +551,9 @@ function renderActiveShelf() {
               <a href="/reader?cid=${m.channel_id}&ch=${readChap}&user_id=${currentUserId}" class="btn-read-online">
                 <i class="fa-solid fa-bolt"></i> Read Online
               </a>
-              <a href="${m.channel_link}" target="_blank" class="btn-read-channel" title="Telegram Channel">
+              <button class="btn-read-channel" onclick="openTgLink('${m.channel_link}', event)" title="Open Telegram Channel">
                 <i class="fa-brands fa-telegram"></i>
-              </a>
+              </button>
             </div>
             <button class="btn-icon-action" style="width:100%;" onclick="removeShelfItem(${m.channel_id}, '${activeShelf}')">
               <i class="fa-solid fa-trash-can"></i> Remove from Shelf
@@ -528,6 +568,7 @@ function renderActiveShelf() {
 async function removeShelfItem(channelId, shelfKey) {
   hapticFeedback('impact');
   profileShelves[shelfKey] = (profileShelves[shelfKey] || []).filter(m => m.channel_id !== channelId);
+  updateShelfTabCounters();
   renderActiveShelf();
 
   try {
@@ -548,8 +589,33 @@ async function removeShelfItem(channelId, shelfKey) {
 }
 
 // =========================================================
-// 🔔 Helper Utilities
+// 🔔 Helper Utilities & Native Telegram Link Opener
 // =========================================================
+function openTgLink(url, e) {
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  if (!url) return;
+
+  hapticFeedback('selection');
+
+  if (window.Telegram?.WebApp) {
+    if (url.includes('t.me/') || url.startsWith('tg://')) {
+      if (window.Telegram.WebApp.openTelegramLink) {
+        window.Telegram.WebApp.openTelegramLink(url);
+        return;
+      }
+    }
+    if (window.Telegram.WebApp.openLink) {
+      window.Telegram.WebApp.openLink(url);
+      return;
+    }
+  }
+
+  window.open(url, '_blank');
+}
+
 function showToast(msg) {
   const toast = document.getElementById('toast');
   if (!toast) return;

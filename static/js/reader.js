@@ -418,8 +418,34 @@ function showErrorState(msg, channelLink) {
   const linkBtn = document.getElementById('errorChannelLink');
 
   if (errorMsg) errorMsg.textContent = msg;
-  if (linkBtn && channelLink) linkBtn.href = channelLink;
+  if (linkBtn && channelLink) {
+    linkBtn.href = channelLink;
+    linkBtn.onclick = (e) => openTgLink(channelLink, e);
+  }
   if (errorCard) errorCard.style.display = 'block';
+}
+
+function openTgLink(url, e) {
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  if (!url) return;
+
+  if (window.Telegram?.WebApp) {
+    if (url.includes('t.me/') || url.startsWith('tg://')) {
+      if (window.Telegram.WebApp.openTelegramLink) {
+        window.Telegram.WebApp.openTelegramLink(url);
+        return;
+      }
+    }
+    if (window.Telegram.WebApp.openLink) {
+      window.Telegram.WebApp.openLink(url);
+      return;
+    }
+  }
+
+  window.open(url, '_blank');
 }
 
 function handleToolbarScroll() {

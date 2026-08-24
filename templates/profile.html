@@ -16,10 +16,13 @@
 </head>
 <body class="profile-page">
 
-  <!-- Header -->
+  <!-- Top App Header -->
   <header class="app-header">
     <div class="brand">
-      <a href="/web" class="btn-back"><i class="fa-solid fa-arrow-left"></i></a>
+      <a href="/web" class="btn-back" title="Back to Catalog"><i class="fa-solid fa-arrow-left"></i></a>
+      <div class="logo-orb" style="width:36px; height:36px;">
+        <img src="https://iili.io/Ct9791V.jpg" alt="Manga Galactic">
+      </div>
       <div>
         <h1>Reader Profile</h1>
         <p class="subtitle">Galactic Statistics & Shelves</p>
@@ -33,43 +36,55 @@
   </header>
 
   <main class="profile-container" id="profileMain">
-    <!-- User Profile Hero Card -->
+    <!-- User Profile Decorated Cosmic Hero Card -->
     <section class="profile-hero-card">
       <div class="profile-avatar-wrap">
         <div class="avatar-ring">
-          <img id="profileAvatar" src="https://api.dicebear.com/7.x/bottts/svg?seed=Reader" alt="Avatar">
+          <img id="profileAvatar" src="https://iili.io/Ct9791V.jpg" alt="Avatar">
         </div>
         <div class="rank-tag" id="profileRankBadge">
           <i class="fa-solid fa-crown"></i> <span id="profileRankText">Reader</span>
         </div>
       </div>
+      
       <div class="profile-info">
         <h2 id="profileName">Loading User...</h2>
         <p class="user-handle" id="profileUsername">@username</p>
         <div class="user-badges-list" id="profileBadges">
           <!-- Dynamic Badges -->
         </div>
+
+        <!-- Level & XP Progress Bar -->
+        <div class="level-progress-wrap">
+          <div class="level-info-row">
+            <span class="level-badge" id="profileLevelText">Level 1 • Novice</span>
+            <span class="level-xp-text" id="profileXpText">0 / 5 Chapters</span>
+          </div>
+          <div class="level-progress-bar">
+            <div class="level-fill" id="profileXpFill" style="width: 15%;"></div>
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- Reading Statistics Metrics Grid -->
+    <!-- Reading Statistics Glowing Metrics Grid -->
     <section class="metrics-grid">
-      <div class="metric-card">
+      <div class="metric-card metric-read">
         <div class="metric-icon read-icon"><i class="fa-solid fa-book-open"></i></div>
         <div class="metric-value" id="statRead">0</div>
         <div class="metric-label">Chapters Read</div>
       </div>
-      <div class="metric-card">
+      <div class="metric-card metric-bm">
         <div class="metric-icon bookmark-icon"><i class="fa-solid fa-bookmark"></i></div>
         <div class="metric-value" id="statBookmarks">0</div>
         <div class="metric-label">Bookmarks</div>
       </div>
-      <div class="metric-card">
+      <div class="metric-card metric-fav">
         <div class="metric-icon fav-icon"><i class="fa-solid fa-heart"></i></div>
         <div class="metric-value" id="statFavorites">0</div>
         <div class="metric-label">Favorites</div>
       </div>
-      <div class="metric-card">
+      <div class="metric-card metric-comp">
         <div class="metric-icon comp-icon"><i class="fa-solid fa-flag-checkered"></i></div>
         <div class="metric-value" id="statCompleted">0</div>
         <div class="metric-label">Completed</div>
@@ -82,13 +97,23 @@
         <h3><i class="fa-solid fa-layer-group"></i> My Reading Shelves</h3>
       </div>
 
-      <!-- Shelf Tabs -->
+      <!-- Shelf Tabs with Dynamic Counters -->
       <div class="shelf-tabs">
-        <button class="shelf-tab active" data-shelf="read"><i class="fa-solid fa-check"></i> Read</button>
-        <button class="shelf-tab" data-shelf="favorite"><i class="fa-solid fa-heart"></i> Favs</button>
-        <button class="shelf-tab" data-shelf="completed"><i class="fa-solid fa-flag-checkered"></i> Done</button>
-        <button class="shelf-tab" data-shelf="hold"><i class="fa-solid fa-pause"></i> Hold</button>
-        <button class="shelf-tab" data-shelf="dropped"><i class="fa-solid fa-hand"></i> Dropped</button>
+        <button class="shelf-tab active" data-shelf="read">
+          <i class="fa-solid fa-check"></i> Read <span class="shelf-pill-count" id="countRead">0</span>
+        </button>
+        <button class="shelf-tab" data-shelf="favorite">
+          <i class="fa-solid fa-heart"></i> Favs <span class="shelf-pill-count" id="countFav">0</span>
+        </button>
+        <button class="shelf-tab" data-shelf="completed">
+          <i class="fa-solid fa-flag-checkered"></i> Done <span class="shelf-pill-count" id="countComp">0</span>
+        </button>
+        <button class="shelf-tab" data-shelf="hold">
+          <i class="fa-solid fa-pause"></i> Hold <span class="shelf-pill-count" id="countHold">0</span>
+        </button>
+        <button class="shelf-tab" data-shelf="dropped">
+          <i class="fa-solid fa-hand"></i> Dropped <span class="shelf-pill-count" id="countDrop">0</span>
+        </button>
       </div>
 
       <!-- Shelf Items Grid -->
