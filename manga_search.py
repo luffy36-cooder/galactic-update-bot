@@ -104,8 +104,8 @@ def _send_single_manga(update_or_query, result: dict):
     channel_link = result.get("channel_link") or (f"https://t.me/c/{str(cid)[4:]}/1" if cid else "https://t.me")
     buttons = [
         [
-            InlineKeyboardButton("📖 Read Channel", url=channel_link),
-            InlineKeyboardButton("🚀 Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))
+            InlineKeyboardButton("📖 Read in Channel", url=channel_link),
+            InlineKeyboardButton("🚀 Read Online (App)", web_app=WebAppInfo(url=f"{WEB_APP_URL}/reader?cid={cid}&ch=1&user_id={user_id}"))
         ],
         [
             InlineKeyboardButton(f"{'🔕 Subscribed' if is_sub else '🔔 Subscribe'}", callback_data=f"subtoggle_{cid}_{user_id}"),
@@ -140,6 +140,7 @@ def _send_single_manga(update_or_query, result: dict):
             buttons.append(row)
             row = []
     if row:
+        row.append(InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile")))
         buttons.append(row)
 
     keyboard = InlineKeyboardMarkup(buttons)

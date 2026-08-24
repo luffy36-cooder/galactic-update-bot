@@ -94,6 +94,24 @@ function setupEventListeners() {
 
   // Auto-hide toolbar on scroll
   window.addEventListener('scroll', handleToolbarScroll, { passive: true });
+
+  // ⌨️ PC / Laptop Keyboard Shortcuts
+  window.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+      if (currentMode === 'page') changeFlipPage(1);
+      else goToNextChapter();
+    } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+      if (currentMode === 'page') changeFlipPage(-1);
+      else goToPrevChapter();
+    } else if (e.key === 'f' || e.key === 'F') {
+      toggleFullscreen();
+    } else if (e.key === 'b' || e.key === 'B') {
+      triggerManualBookmark();
+    } else if (e.key === 'm' || e.key === 'M') {
+      setReaderMode(currentMode === 'webtoon' ? 'page' : 'webtoon');
+    }
+  });
 }
 
 // =========================================================
@@ -133,44 +151,31 @@ function populateChapterDropdown() {
 // 📄 Stream & Render Chapter PDF (via PDF.js)
 // =========================================================
 async function loadChapterPdf() {
-  showLoader(true, `Streaming Chapter ${currentChapter} from Telegram CDN...`);
+  showLoader(true, `Loading Chapter ${currentChapter}...`);
   renderedPages.clear();
   pdfDoc = null;
 
-  // Update dropdown value
   const select = document.getElementById('chapterSelect');
   if (select) select.value = currentChapter;
 
   const pdfUrl = `/api/chapter/file/${channelId}/${currentChapter}`;
 
   try {
-    // 1. Quick check response header
-    const headRes = await fetch(pdfUrl, { method: 'HEAD' });
-    const cType = headRes.headers.get('content-type') || '';
-
-    if (!headRes.ok || !cType.includes('application/pdf')) {
-      const errRes = await fetch(pdfUrl);
-      const errData = await errRes.json().catch(() => ({}));
-      showErrorState(
-        errData.error || `Chapter ${currentChapter} is available in Telegram channel.`,
-        errData.channel_link || mangaData?.channel_link
-      );
-      return;
-    }
-
-    // 2. Stream & Render with PDF.js
     const loadingTask = window.pdfjsLib.getDocument({
       url: pdfUrl,
       cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
       cMapPacked: true,
-      rangeChunkSize: 65536 // 64KB HTTP Range chunk stream
+      rangeChunkSize: 131072, // 128KB HTTP Range chunk stream for 2x faster buffering!
+      disableAutoFetch: false
     });
 
     loadingTask.onProgress = (progress) => {
       if (progress.total > 0) {
         const percent = Math.round((progress.loaded / progress.total) * 100);
-        document.getElementById('loadProgress').style.width = `${percent}%`;
-        document.getElementById('loaderStatusText').textContent = `Streaming Chapter ${currentChapter} (${percent}%)...`;
+        const bar = document.getElementById('loadProgress');
+        const text = document.getElementById('loaderStatusText');
+        if (bar) bar.style.width = `${percent}%`;
+        if (text) text.textContent = `Streaming Chapter ${currentChapter} (${percent}%)...`;
       }
     };
 
@@ -186,12 +191,28 @@ async function loadChapterPdf() {
       renderPageFlipMode();
     }
 
-    // Auto-save read progress
+    // Auto-save read progress & pre-fetch next chapter in background!
     syncProgressBookmark();
+    prefetchNextChapter();
 
   } catch (err) {
     console.error('PDF load error:', err);
-    showErrorState(`Chapter ${currentChapter} is available in Telegram channel.`, mangaData?.channel_link);
+    try {
+      const errRes = await fetch(pdfUrl);
+      const errData = await errRes.json();
+      showErrorState(errData.error || `Chapter ${currentChapter} is available in Telegram channel.`, errData.channel_link || mangaData?.channel_link);
+    } catch (e) {
+      showErrorState(`Chapter ${currentChapter} is available in Telegram channel.`, mangaData?.channel_link);
+    }
+  }
+}
+
+function prefetchNextChapter() {
+  const idx = availableChapters.indexOf(currentChapter);
+  if (idx !== -1 && idx < availableChapters.length - 1) {
+    const nextChap = availableChapters[idx + 1];
+    // Background cache warm on server
+    fetch(`/api/chapter/file/${channelId}/${nextChap}`, { method: 'HEAD' }).catch(() => {});
   }
 }
 
