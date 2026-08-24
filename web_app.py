@@ -428,7 +428,7 @@ def register_web_routes(app, bot_getter=None):
         })
 
     # -------------------------------------------------------------
-    # 📄 API: Stream Chapter PDF directly from Telegram CDN (0 Server Storage / RAM)
+    # 📄 API: Stream Chapter PDF directly from Telegram MTProto (Supports 20MB-2GB Files!)
     # -------------------------------------------------------------
     @app.route("/api/chapter/file/<int(signed=True):channel_id>/<int:chapter>", methods=["GET"])
     def api_get_chapter_file(channel_id, chapter):
@@ -436,29 +436,29 @@ def register_web_routes(app, bot_getter=None):
         manga = get_manga_by_id(channel_id) or {}
         invite_link = manga.get("channel_link") or f"https://t.me/c/{str(channel_id)[4:]}/1"
 
-        # Build exact direct post link if msg_id is known
         direct_post_link = invite_link
         if chap_doc and chap_doc.get("msg_id"):
             from channel_handler import build_post_link
             direct_post_link = build_post_link(channel_id, chap_doc["msg_id"], invite_link)
 
-        if not chap_doc or not chap_doc.get("file_id"):
+        if not chap_doc:
             return jsonify({
                 "success": False,
-                "error": f"Chapter {chapter} is available in Telegram channel.",
+                "error": f"Chapter {chapter} is not indexed yet.",
                 "channel_link": direct_post_link
             }), 404
 
-        file_id = chap_doc["file_id"]
-        bot = bot_getter() if callable(bot_getter) else bot_getter
-        if bot:
+        msg_id = chap_doc.get("msg_id")
+        if msg_id:
             try:
-                tg_file = bot.get_file(file_id)
-                if tg_file and tg_file.file_path:
-                    # Redirect client directly to Telegram's secure CDN stream
-                    return redirect(tg_file.file_path)
+                from tg_streamer import get_streamer
+                streamer = get_streamer()
+                chunk_gen = streamer.stream_pdf(channel_id, msg_id)
+                return Response(chunk_gen, mimetype="application/pdf", headers={
+                    "Content-Disposition": f"inline; filename=Chapter_{chapter}.pdf"
+                })
             except Exception as e:
-                logger.warning(f"Telegram Bot API limit on get_file for {file_id} (>20MB): {e}")
+                logger.error(f"MTProto streaming failed for chapter {chapter}: {e}")
 
         return jsonify({
             "success": False,

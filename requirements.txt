@@ -6,3 +6,5 @@ rapidfuzz>=3.9.0
 pytz==2024.1
 urllib3==1.26.18
 python-dotenv==1.0.1
+telethon==1.40.0
+cryptg
