@@ -226,15 +226,17 @@ def main():
         from telegram import BotCommand
         updater.bot.set_my_commands([
             BotCommand("start", "🚀 Start Bot & Mini App"),
-            BotCommand("web", "🌐 Open Manga Catalog & Reader"),
+            BotCommand("web", "🌐 Open Manga Catalog & Live Reader"),
             BotCommand("webprofile", "👤 Visual Reading Profile"),
-            BotCommand("manga", "🔍 Search Manga"),
-            BotCommand("request", "📨 Request a Manga"),
-            BotCommand("bookmark", "📌 Save Bookmark"),
-            BotCommand("mybookmarks", "🔖 View Bookmarks"),
+            BotCommand("manga", "🔍 Search 136+ Manga & Manhwa"),
+            BotCommand("request", "📨 Request Manga / Manhwa"),
+            BotCommand("bookmark", "📌 Save Reading Progress"),
+            BotCommand("mybookmarks", "🔖 View Saved Bookmarks"),
+            BotCommand("read", "📖 Your Read Manga List"),
+            BotCommand("fav", "❤️ Your Favorite Manga"),
             BotCommand("toprated", "⭐ Top Rated Manga"),
             BotCommand("leaderboard", "🏆 Reader Leaderboard"),
-            BotCommand("help", "📖 Help & Guide")
+            BotCommand("help", "📖 Complete Command Guide")
         ])
         logger.info("✅ Telegram Bot Command Menu successfully updated!")
     except Exception as e:

@@ -280,6 +280,14 @@ def save_user_bookmark(user_id: int, manga_name: str, chapter: int):
     channel_link = manga.get("channel_link", "")
     channel_id = manga.get("channel_id")
 
+    # 🎯 Auto-resolve exact chapter post link from chapter_files_col!
+    direct_post_link = channel_link
+    if channel_id and str(chapter).isdigit():
+        chap_doc = chapter_files_col.find_one({"channel_id": channel_id, "chapter": int(chapter)})
+        if chap_doc and chap_doc.get("msg_id"):
+            from channel_handler import build_post_link
+            direct_post_link = build_post_link(channel_id, chap_doc["msg_id"], channel_link)
+
     bookmarks_col.update_one(
         {"user_id": user_id, "manga": canonical_name},
         {"$set": {
@@ -287,6 +295,7 @@ def save_user_bookmark(user_id: int, manga_name: str, chapter: int):
             "chapter": str(chapter),
             "channel_id": channel_id,
             "channel_link": channel_link,
+            "post_link": direct_post_link,
             "updated_at": datetime.utcnow()
         }},
         upsert=True
@@ -296,7 +305,17 @@ def save_user_bookmark(user_id: int, manga_name: str, chapter: int):
 
 
 def get_user_bookmarks(user_id: int):
-    return list(bookmarks_col.find({"user_id": user_id}, {"_id": 0}))
+    bms = list(bookmarks_col.find({"user_id": user_id}, {"_id": 0}))
+    for b in bms:
+        if not b.get("post_link") and b.get("channel_id") and str(b.get("chapter", "")).isdigit():
+            cid = b.get("channel_id")
+            ch = int(b.get("chapter"))
+            c_link = b.get("channel_link", "")
+            chap_doc = chapter_files_col.find_one({"channel_id": cid, "chapter": ch})
+            if chap_doc and chap_doc.get("msg_id"):
+                from channel_handler import build_post_link
+                b["post_link"] = build_post_link(cid, chap_doc["msg_id"], c_link)
+    return bms
 
 
 def remove_bookmark(user_id: int, manga_name: str):

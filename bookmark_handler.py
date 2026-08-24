@@ -153,15 +153,17 @@ def handle_bookmark_buttons(update: Update, context: CallbackContext):
         except Exception:
             progress_text = "📊 <b>Progress:</b> Tracked"
 
+        direct_link = target_bm.get("post_link") or channel_link
+
         caption = (
             f"📚 <b>{html.escape(manga_name)}</b>\n\n"
             f"📖 <b>Your Current Chapter:</b> {chapter}\n"
             f"{progress_text}\n"
-            f"🔗 <a href='{channel_link}'>Open Manga Channel</a>"
+            f"🔗 <a href='{direct_link}'>Jump to Chapter {chapter}</a>"
         )
 
         buttons = [
-            [InlineKeyboardButton("📖 Read Manga", url=channel_link)],
+            [InlineKeyboardButton(f"📖 Read Chapter {chapter}", url=direct_link)],
             [InlineKeyboardButton("❌ Remove Bookmark", callback_data=f"bm_remove_{idx}_{user_id}")]
         ]
 
