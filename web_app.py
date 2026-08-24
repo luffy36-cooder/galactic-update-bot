@@ -1,5 +1,6 @@
+import os
 import logging
-from flask import request, jsonify, render_template, redirect, Response
+from flask import request, jsonify, render_template, redirect, Response, send_file
 from database import (
     manga_col,
     get_manga_by_id,
@@ -453,10 +454,15 @@ def register_web_routes(app, bot_getter=None):
             try:
                 from tg_streamer import get_streamer
                 streamer = get_streamer()
-                chunk_gen = streamer.stream_pdf(channel_id, msg_id)
-                return Response(chunk_gen, mimetype="application/pdf", headers={
-                    "Content-Disposition": f"inline; filename=Chapter_{chapter}.pdf"
-                })
+                file_path = streamer.get_or_download_pdf(channel_id, msg_id)
+                if file_path and os.path.exists(file_path):
+                    return send_file(
+                        file_path,
+                        mimetype="application/pdf",
+                        as_attachment=False,
+                        download_name=f"Chapter_{chapter}.pdf",
+                        conditional=True
+                    )
             except Exception as e:
                 logger.error(f"MTProto streaming failed for chapter {chapter}: {e}")
 

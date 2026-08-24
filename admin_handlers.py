@@ -255,14 +255,23 @@ def scanallchannels_cmd(update: Update, context: CallbackContext):
     from database import manga_col
     from tg_streamer import get_streamer
     import threading
+    import time
+    import html
 
-    update.message.reply_text("🛰️ <b>Starting High-Speed MTProto Channel Scan...</b>\n\nBatch scanning all 136 manga channels to index every chapter PDF directly for the Webtoon In-App Reader. You will receive a summary when finished!", parse_mode="HTML")
+    status_msg = update.message.reply_text(
+        "🛰️ <b>Starting High-Speed MTProto Channel Scan...</b>\n\n"
+        "<code>[░░░░░░░░░░░░] 0%</code>\n"
+        "<i>Connecting to Telegram MTProto servers...</i>",
+        parse_mode="HTML"
+    )
 
     def run_scan():
         streamer = get_streamer()
         mangas = list(manga_col.find({"channel_id": {"$ne": None}}))
+        total_channels = len(mangas)
         total_found = 0
         channels_scanned = 0
+        last_edit_time = time.time()
 
         for m in mangas:
             cid = m.get("channel_id")
@@ -277,18 +286,47 @@ def scanallchannels_cmd(update: Update, context: CallbackContext):
                 logger.error(f"Error scanning channel {cid} ({m_name}): {e}")
 
             channels_scanned += 1
-            if channels_scanned % 10 == 0:
-                logger.info(f"🛰️ Scanned {channels_scanned}/{len(mangas)} channels... ({total_found} PDF chapters indexed)")
+            now = time.time()
 
-        context.bot.send_message(
-            chat_id=user_id,
-            text=(
+            # Update progress bar in Telegram every 3 seconds or on the last channel
+            if now - last_edit_time >= 3.0 or channels_scanned == total_channels:
+                last_edit_time = now
+                percent = int((channels_scanned / total_channels) * 100) if total_channels > 0 else 0
+                filled = int((channels_scanned / total_channels) * 12) if total_channels > 0 else 0
+                bar = "█" * filled + "░" * (12 - filled)
+
+                try:
+                    status_msg.edit_text(
+                        f"🛰️ <b>Scanning Manga Channels via MTProto...</b>\n\n"
+                        f"<code>[{bar}] {percent}%</code> ({channels_scanned}/{total_channels} channels)\n\n"
+                        f"📚 <b>Current:</b> <code>{html.escape(m_name[:35])}</code>\n"
+                        f"📄 <b>PDF Chapters Found:</b> <b>{total_found}</b>\n\n"
+                        f"<i>Running fast batch scanner in background...</i>",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+
+        # Final completion message
+        try:
+            status_msg.edit_text(
                 f"🎉 <b>High-Speed MTProto Scan Complete!</b>\n\n"
-                f"• Total Channels Scanned: <b>{channels_scanned}</b>\n"
-                f"• Total PDF Chapters Indexed: <b>{total_found}</b>\n\n"
-                f"<i>All chapters (including 20MB+ files) are now immediately streamable in the Web Mini App! 🚀</i>"
-            ),
-            parse_mode="HTML"
-        )
+                f"<code>[████████████] 100%</code>\n\n"
+                f"• <b>Total Channels Scanned:</b> {channels_scanned}\n"
+                f"• <b>Total PDF Chapters Indexed:</b> {total_found}\n\n"
+                f"<i>All manga in the Web Mini App are now 100% indexed and streamable without size limits! 🚀</i>",
+                parse_mode="HTML"
+            )
+        except Exception:
+            context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    f"🎉 <b>High-Speed MTProto Scan Complete!</b>\n\n"
+                    f"• Total Channels Scanned: <b>{channels_scanned}</b>\n"
+                    f"• Total PDF Chapters Indexed: <b>{total_found}</b>\n\n"
+                    f"<i>All manga in the Web Mini App are now 100% indexed and streamable! 🚀</i>"
+                ),
+                parse_mode="HTML"
+            )
 
-    threading.Thread(target=run_scan, daemon=True, name="MTProtoDeepScanner").start()
+    threading.Thread(target=run_scan, daemon=True, name="MTProtoLiveScanner").start()

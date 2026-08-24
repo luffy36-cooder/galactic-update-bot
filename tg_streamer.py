@@ -1,3 +1,4 @@
+import os
 import queue
 import threading
 import asyncio
@@ -8,6 +9,9 @@ from database import save_chapter_file, manga_col
 from channel_handler import extract_chapter_number
 
 logger = logging.getLogger(__name__)
+
+CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache", "pdfs")
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 
 class MTProtoStreamer:
@@ -31,6 +35,27 @@ class MTProtoStreamer:
 
         self.loop.run_until_complete(_connect())
         self.loop.run_forever()
+
+    def get_or_download_pdf(self, channel_id: int, msg_id: int) -> str:
+        """Downloads and caches the PDF on disk, returning file path for instant HTTP Range requests."""
+        cache_path = os.path.join(CACHE_DIR, f"{channel_id}_{msg_id}.pdf")
+        if os.path.exists(cache_path) and os.path.getsize(cache_path) > 5000:
+            return cache_path
+
+        async def _download():
+            msg = await self.client.get_messages(channel_id, ids=msg_id)
+            if msg and msg.document:
+                await self.client.download_media(msg.document, file=cache_path)
+            else:
+                logger.warning(f"No document found on msg_id {msg_id} in channel {channel_id}")
+
+        if self.loop and self.loop.is_running():
+            fut = asyncio.run_coroutine_threadsafe(_download(), self.loop)
+            fut.result(timeout=45)
+
+        if os.path.exists(cache_path) and os.path.getsize(cache_path) > 5000:
+            return cache_path
+        return None
 
     def stream_pdf(self, channel_id: int, msg_id: int):
         """Generates stream chunks of the PDF with zero file size limits!"""
@@ -66,7 +91,6 @@ class MTProtoStreamer:
 
         async def _scan():
             nonlocal indexed_count, highest_chapter
-            # Split into chunks of 100 to avoid hitting batch limits
             for i in range(0, len(msg_ids), 100):
                 batch = msg_ids[i:i + 100]
                 try:
@@ -100,3 +124,4 @@ def get_streamer() -> MTProtoStreamer:
     if _streamer is None:
         _streamer = MTProtoStreamer()
     return _streamer
+
