@@ -432,11 +432,23 @@ def register_web_routes(app, bot_getter=None):
     # -------------------------------------------------------------
     # 📄 API: Stream Chapter PDF directly from Telegram MTProto (Supports 20MB-2GB Files!)
     # -------------------------------------------------------------
-    @app.route("/api/chapter/file/<int(signed=True):channel_id>/<int:chapter>", methods=["GET"])
+    @app.route("/api/chapter/file/<int(signed=True):channel_id>/<int:chapter>", methods=["GET", "HEAD"])
     def api_get_chapter_file(channel_id, chapter):
         chap_doc = get_chapter_file(channel_id, chapter)
         manga = get_manga_by_id(channel_id) or {}
         invite_link = manga.get("channel_link") or f"https://t.me/c/{str(channel_id)[4:]}/1"
+
+        # On-Demand MTProto Auto-Scan if this chapter isn't indexed yet!
+        if not chap_doc or not chap_doc.get("msg_id"):
+            try:
+                from tg_streamer import get_streamer
+                streamer = get_streamer()
+                highest_ch = manga.get("total_chapters", 0) or 0
+                max_range = max(200, highest_ch + 50)
+                streamer.scan_channel_batch(channel_id, start_id=1, end_id=max_range)
+                chap_doc = get_chapter_file(channel_id, chapter)
+            except Exception as e:
+                logger.error(f"On-demand MTProto scan failed for channel {channel_id}: {e}")
 
         direct_post_link = invite_link
         if chap_doc and chap_doc.get("msg_id"):

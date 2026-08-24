@@ -8,6 +8,9 @@ const tg = window.Telegram?.WebApp;
 if (tg) {
   tg.ready();
   tg.expand();
+  if (tg.requestFullscreen) {
+    try { tg.requestFullscreen(); } catch (e) {}
+  }
   if (tg.setHeaderColor) tg.setHeaderColor('#000000');
   if (tg.setBackgroundColor) tg.setBackgroundColor('#000000');
 }
@@ -80,6 +83,15 @@ function setupEventListeners() {
   document.getElementById('tapLeft').addEventListener('click', () => changeFlipPage(-1));
   document.getElementById('tapRight').addEventListener('click', () => changeFlipPage(1));
 
+  // Tap Webtoon Viewport to Toggle Toolbars (Immersive Mode)
+  const webtoonView = document.getElementById('webtoonContainer');
+  if (webtoonView) {
+    webtoonView.addEventListener('click', () => {
+      document.getElementById('readerNavbar')?.classList.toggle('hidden');
+      document.getElementById('readerFooter')?.classList.toggle('hidden');
+    });
+  }
+
   // Auto-hide toolbar on scroll
   window.addEventListener('scroll', handleToolbarScroll, { passive: true });
 }
@@ -132,6 +144,21 @@ async function loadChapterPdf() {
   const pdfUrl = `/api/chapter/file/${channelId}/${currentChapter}`;
 
   try {
+    // 1. Quick check response header
+    const headRes = await fetch(pdfUrl, { method: 'HEAD' });
+    const cType = headRes.headers.get('content-type') || '';
+
+    if (!headRes.ok || !cType.includes('application/pdf')) {
+      const errRes = await fetch(pdfUrl);
+      const errData = await errRes.json().catch(() => ({}));
+      showErrorState(
+        errData.error || `Chapter ${currentChapter} is available in Telegram channel.`,
+        errData.channel_link || mangaData?.channel_link
+      );
+      return;
+    }
+
+    // 2. Stream & Render with PDF.js
     const loadingTask = window.pdfjsLib.getDocument({
       url: pdfUrl,
       cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
@@ -143,7 +170,7 @@ async function loadChapterPdf() {
       if (progress.total > 0) {
         const percent = Math.round((progress.loaded / progress.total) * 100);
         document.getElementById('loadProgress').style.width = `${percent}%`;
-        document.getElementById('loaderStatusText').textContent = `Loading Chapter ${currentChapter} (${percent}%)...`;
+        document.getElementById('loaderStatusText').textContent = `Streaming Chapter ${currentChapter} (${percent}%)...`;
       }
     };
 
@@ -230,9 +257,10 @@ async function renderCanvasPage(pageNum) {
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
-    const viewportWidth = Math.min(window.innerWidth, 800);
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 800;
     const unscaledViewport = page.getViewport({ scale: 1 });
-    const scale = (viewportWidth / unscaledViewport.width) * (window.devicePixelRatio || 1);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2); // Crisp retina rendering
+    const scale = (viewportWidth / unscaledViewport.width) * dpr;
     const viewport = page.getViewport({ scale: scale });
 
     canvas.width = viewport.width;
@@ -464,6 +492,16 @@ function handleToolbarScroll() {
 }
 
 function toggleFullscreen() {
+  if (window.Telegram?.WebApp?.requestFullscreen) {
+    try {
+      if (window.Telegram.WebApp.isFullscreen) {
+        window.Telegram.WebApp.exitFullscreen();
+      } else {
+        window.Telegram.WebApp.requestFullscreen();
+      }
+    } catch (e) {}
+  }
+
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen().catch(() => {});
   } else {
