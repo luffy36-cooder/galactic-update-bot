@@ -86,60 +86,67 @@ def start_cmd(update: Update, context: CallbackContext):
 
 # /help command
 def help_cmd(update: Update, context: CallbackContext):
-    user = update.effective_user.first_name
+    user = update.effective_user.first_name or "Senpai"
     user_id = update.effective_user.id
+    bot_username = context.bot.username or "Galactic_Update_bot"
 
     text = (
-        "📖 <b>Full Command Guide</b>\n\n"
-        "Here's your command spellbook, senpai~ 🪄\n\n"
+        "🌌 <b>Galactic Manga Bot — Command Guide</b> 📖\n\n"
+        f"Hey <b>{user}</b>! Here are all the powerful features you can use:\n\n"
 
-        "🔍 Search:\n"
-        "/manga One Piece — Search for a manga\n"
-        "Inline: <code>@YourBotUsername Naruto</code>\n\n"
+        "🌐 <b>Web Mini App & In-App Reader:</b>\n"
+        "• <code>/web</code> — Launch Full Manga Catalog & Live Reader 🚀\n"
+        "• <code>/webprofile</code> — Open your Visual Gamified Cosmic Profile 👤\n\n"
 
-        "📌 Bookmarks:\n"
-        "/bookmark Nano Machine 200 — Add & track progress\n"
-        "/mybookmarks — View & manage\n\n"
+        "🔍 <b>Manga Search & Reading:</b>\n"
+        "• <code>/manga &lt;name&gt;</code> — Search manga with ratings & status buttons\n"
+        f"• Inline: <code>@{bot_username} Naruto</code> — Share manga in any chat\n\n"
 
-        "📚 Reading List:\n"
-        "/read | /fav | /drop | /hold\n"
-        "/currentlyreading — Ongoing titles\n"
-        "/mylist — Summary of all\n\n"
+        "📨 <b>Manga Requests System:</b>\n"
+        "• <code>/request &lt;name&gt;</code> (or <code>#request &lt;name&gt;</code> / <code>request &lt;name&gt;</code>)\n"
+        "<i>Instant already-uploaded check, duplicate prevention, and direct admin DM response!</i>\n\n"
 
-        "📨 Requests:\n"
-        "/request Solo Leveling — Ask for missing manga\n"
-        "/requestlist — View all requests (Sudo only)\n\n"
+        "📌 <b>Smart Bookmarks:</b>\n"
+        "• <code>/bookmark &lt;name&gt; &lt;ch&gt;</code> — Save your reading chapter progress\n"
+        "• <code>/mybookmarks</code> — View & jump back to your saved chapters\n"
+        "• <code>/clearbookmarks</code> — Clear saved bookmarks\n\n"
 
-        "🌟 Recommendations:\n"
-        "/recommend — Based on your favorites\n\n"
+        "📚 <b>Reading Shelves & Tracking:</b>\n"
+        "• <code>/read</code> | <code>/fav</code> | <code>/completed</code> | <code>/hold</code> | <code>/drop</code>\n"
+        "• <code>/currentlyreading</code> — View active ongoing manga\n"
+        "• <code>/mylist</code> — Complete reading summary\n\n"
 
-        "🥇 Leaderboard & Ratings:\n"
-        "/leaderboard — Top readers by chapters\n"
-        "/toprated — Highest rated manga by community ⭐\n\n"
+        "⭐ <b>Ratings & Community Leaderboard:</b>\n"
+        "• <code>/toprated</code> — Top community-rated manga leaderboard ⭐\n"
+        "• <code>/leaderboard</code> — Top reader rankings & chapters read 🏆\n"
+        "• <code>/recommend</code> — Personalized recommendations\n\n"
 
-        "🌐 Web Mini App:\n"
-        "/web — Launch Manga Catalog Mini App\n"
-        "/webprofile — Launch Advanced Visual Profile\n\n"
+        "🔔 <b>New Chapter DM Alerts:</b>\n"
+        "• Tap 🔔 Subscribe on any manga to get instant alerts whenever new chapters drop!\n\n"
 
-        "🛠 Admin Tools:\n"
-        "/add &lt;channel_id&gt; &lt;manga name&gt;\n"
-        "/unpost &lt;channel_id&gt; &lt;chapter&gt;\n"
-        "/removemanga &lt;name&gt;\n"
-        "/editmanga &lt;old&gt; &lt;new&gt;\n"
-        "/listmanga\n"
-        "/setchapters &lt;manga&gt; &lt;total&gt;\n\n"
-
-        "🎛 Group Mode:\n"
-        "/setmode text — Auto-search mode\n"
-        "/setmode command — Use /manga only\n\n"
-
-        "📊 Stats:\n"
-        "/stats — Total manga, users, groups"
+        "🛡️ <b>Admin & Sudo Commands:</b>\n"
+        "• <code>/scanallchannels</code> — High-speed past PDF channel scanner 🛰️\n"
+        "• <code>/syncchapters</code> — Auto-sync chapter numbers\n"
+        "• <code>/add &lt;channel_id&gt; &lt;name&gt;</code> — Register a manga channel\n"
+        "• <code>/requestlist</code> — Review pending requests\n"
+        "• <code>/replyreq &lt;user_id&gt; &lt;msg&gt;</code> — Direct admin DM to user\n"
+        "• <code>/broadcast</code> & <code>/dmbroadcast</code> — Announce updates"
     )
-    update.message.reply_text(text, parse_mode="HTML")
 
-    # 📝 Log help command
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 Open Manga Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web")),
+         InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))],
+        [InlineKeyboardButton("🔍 Search Help", callback_data="help_search"),
+         InlineKeyboardButton("📌 Bookmarks Help", callback_data="help_bookmarks")],
+        [InlineKeyboardButton("📨 Requests Help", callback_data="help_requests"),
+         InlineKeyboardButton("📚 Shelves Help", callback_data="help_lists")],
+        [InlineKeyboardButton("🥇 Leaderboard Help", callback_data="help_leaderboard"),
+         InlineKeyboardButton("🛠 Admin Help", callback_data="help_admin")]
+    ])
+
+    update.message.reply_text(text, parse_mode="HTML", reply_markup=buttons)
     log_to_channel(context, f"📖 <b>/help used</b> by <code>{user}</code> (ID: <code>{user_id}</code>)")
+
 
 # Inline help button handler
 def help_button_handler(update: Update, context: CallbackContext):
@@ -148,52 +155,72 @@ def help_button_handler(update: Update, context: CallbackContext):
 
     section_texts = {
         "help_search": (
-            "🔍 <b>Search Commands</b>\n\n"
-            "/manga One Piece — Search by name\n"
-            "Inline: <code>@YourBotUsername Naruto</code>\n"
-            "Groups (text mode): Just type the name!"
+            "🔍 <b>Manga Search & Reader Guide</b>\n\n"
+            "• <code>/manga &lt;name&gt;</code> — Search across all 136+ manhwa\n"
+            "• <b>Inline Search:</b> Type <code>@Galactic_Update_bot &lt;query&gt;</code> in any chat!\n"
+            "• <b>Web Mini App:</b> Tap <code>/web</code> for high-speed online reading & PDF streaming!\n"
+            "• <b>Groups:</b> Type the name directly when text mode is enabled (/setmode text)."
         ),
         "help_bookmarks": (
-            "📌 <b>Bookmark System</b>\n\n"
-            "/bookmark Solo Leveling 179 — Save & track\n"
-            "/mybookmarks — View, edit, remove"
+            "📌 <b>Smart Bookmark System</b>\n\n"
+            "• <code>/bookmark &lt;manga&gt; &lt;chapter&gt;</code> — Save your reading chapter\n"
+            "• <code>/mybookmarks</code> — View all saved bookmarks with 1-tap jump buttons\n"
+            "• <code>/clearbookmarks</code> — Remove all saved bookmarks\n"
+            "• You can also bookmark with 1 tap directly inside the Web Reader!"
         ),
         "help_lists": (
-            "📚 <b>Your Reading List</b>\n\n"
-            "/read | /fav | /drop | /hold\n"
-            "/currentlyreading — Ongoing manga\n"
-            "/mylist — Full summary"
+            "📚 <b>Reading Shelves & Tracker</b>\n\n"
+            "• <code>/read</code> — View all manga you have read\n"
+            "• <code>/fav</code> — View your favorite manga collection\n"
+            "• <code>/completed</code> — Finished reading list\n"
+            "• <code>/hold</code> & <code>/drop</code> — Paused and dropped titles\n"
+            "• <code>/mylist</code> — Complete overview of your manga universe!"
         ),
         "help_requests": (
-            "📨 <b>Manga Requests</b>\n\n"
-            "/request Return of the Mount Hua Sect — Suggest manga\n"
-            "/requestlist — View requests (Sudo only)"
+            "📨 <b>Manga Request System</b>\n\n"
+            "• Send: <code>/request &lt;name&gt;</code>, <code>#request &lt;name&gt;</code>, or <code>request &lt;name&gt;</code>\n"
+            "• <b>Instant Links:</b> If the manga is already available, the bot gives you the direct read link immediately!\n"
+            "• <b>Admin Review:</b> Admins review requests and notify you directly in DM when approved!"
         ),
         "help_recommend": (
-            "🌟 <b>Get Recommendations</b>\n\n"
-            "/recommend — Based on your favs and reading"
+            "🌟 <b>Recommendations System</b>\n\n"
+            "• <code>/recommend</code> — Discovers top trending manga personalized to your favorite genres!"
         ),
         "help_leaderboard": (
-            "🥇 <b>Leaderboard</b>\n\n"
-            "/leaderboard — Top manga readers 📈"
+            "🥇 <b>Leaderboards & Ratings</b>\n\n"
+            "• <code>/leaderboard</code> — Top reader rankings by chapters read 🏆\n"
+            "• <code>/toprated</code> — Highest rated manga by community reviews ⭐\n"
+            "• Rate any manga (1-5★) directly in the bot or Web App!"
         ),
         "help_admin": (
-            "🛠 <b>Admin Tools</b>\n\n"
-            "/add &lt;channel_id&gt; &lt;manga name&gt;\n"
-            "/unpost &lt;channel_id&gt; &lt;chapter&gt;\n"
-            "/removemanga &lt;name&gt;\n"
-            "/editmanga &lt;old&gt; &lt;new&gt;\n"
-            "/listmanga\n"
-            "/setchapters &lt;manga&gt; &lt;total&gt;"
+            "🛠 <b>Admin & Sudo Management</b>\n\n"
+            "• <code>/scanallchannels</code> — High-speed MTProto past PDF scanner 🛰️\n"
+            "• <code>/syncchapters</code> — Auto-sync chapter numbers\n"
+            "• <code>/add &lt;channel_id&gt; &lt;name&gt;</code> — Add new manga channel\n"
+            "• <code>/requestlist</code> — Review pending requests\n"
+            "• <code>/replyreq &lt;user_id&gt; &lt;msg&gt;</code> — DM a user directly\n"
+            "• <code>/broadcast</code> & <code>/dmbroadcast</code> — Global announcements\n"
+            "• <code>/sudo</code> — List all active bot admins"
         ),
         "help_stats": (
-            "📊 <b>Bot Stats</b>\n\n"
-            "/stats — Manga, users, groups"
+            "📊 <b>Bot Statistics</b>\n\n"
+            "• <code>/stats</code> — View total manga titles, chapters, registered users, and active groups!"
         ),
     }
 
     text = section_texts.get(query.data, "❓ Unknown help section.")
-    query.edit_message_caption(caption=text, parse_mode="HTML")
+    back_button = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 Back to Main Help", callback_data="help_main"),
+         InlineKeyboardButton("🚀 Launch Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))]
+    ])
 
-    # 📝 Log button tap
-    log_to_channel(context, f"🔘 <b>Help Section Opened:</b> <code>{query.data}</code>\n👤 <code>{query.from_user.full_name}</code> (ID: <code>{query.from_user.id}</code>)")
+    if query.data == "help_main":
+        help_cmd(update, context)
+    else:
+        try:
+            query.edit_message_text(text=text, parse_mode="HTML", reply_markup=back_button)
+        except Exception:
+            try:
+                query.edit_message_caption(caption=text, parse_mode="HTML", reply_markup=back_button)
+            except Exception:
+                pass

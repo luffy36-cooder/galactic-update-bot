@@ -479,11 +479,17 @@ async function initProfilePage() {
 
     if (data.success) {
       const p = data.profile;
-      document.getElementById('statRead').textContent = p.read_count;
-      document.getElementById('statBookmarks').textContent = p.bookmarks_count;
-      document.getElementById('statFavorites').textContent = p.favorites_count;
-      document.getElementById('statCompleted').textContent = p.completed_count;
-      document.getElementById('profileRankText').textContent = p.rank;
+      const elRead = document.getElementById('statRead');
+      const elBm = document.getElementById('statBookmarks');
+      const elFav = document.getElementById('statFavorites');
+      const elComp = document.getElementById('statCompleted');
+      const elRank = document.getElementById('profileRankText');
+
+      if (elRead) elRead.textContent = p.read_count || 0;
+      if (elBm) elBm.textContent = p.bookmarks_count || 0;
+      if (elFav) elFav.textContent = p.favorites_count || 0;
+      if (elComp) elComp.textContent = p.completed_count || 0;
+      if (elRank) elRank.textContent = p.rank || 'Reader';
 
       // Calculate Gamified Level & XP
       const readCount = p.read_count || 0;
@@ -509,12 +515,32 @@ async function initProfilePage() {
 
       profileShelves = p.shelves || {};
 
+      // Setup Bookmark and Rating Modals in Profile
+      const bmSaveBtn = document.getElementById('bmSaveBtn');
+      if (bmSaveBtn) bmSaveBtn.onclick = submitBookmark;
+
+      const rateSubmitBtn = document.getElementById('rateSubmitBtn');
+      if (rateSubmitBtn) rateSubmitBtn.onclick = submitRating;
+
+      document.querySelectorAll('.star-pick').forEach(star => {
+        star.onclick = () => {
+          const val = parseInt(star.getAttribute('data-val'));
+          setRatingStars(val);
+          hapticFeedback('selection');
+        };
+      });
+
       // Populate Shelf Counters
       updateShelfTabCounters();
       renderActiveShelf();
+    } else {
+      const grid = document.getElementById('shelfGrid');
+      if (grid) grid.innerHTML = `<div class="empty-shelf">Could not load profile data.</div>`;
     }
   } catch (err) {
     console.error('Failed to load profile:', err);
+    const grid = document.getElementById('shelfGrid');
+    if (grid) grid.innerHTML = `<div class="empty-shelf">Failed to load profile. Please check your connection.</div>`;
   }
 }
 
@@ -545,7 +571,16 @@ function renderActiveShelf() {
   const items = profileShelves[activeShelf] || [];
 
   if (items.length === 0) {
-    grid.innerHTML = `<div class="empty-shelf">No manga in your <b>${activeShelf}</b> shelf yet.</div>`;
+    grid.innerHTML = `
+      <div class="empty-shelf">
+        <i class="fa-solid fa-book-open" style="font-size: 28px; margin-bottom: 8px; opacity: 0.6; display: block; color: var(--accent-purple);"></i>
+        No manga in your <b>${activeShelf}</b> shelf yet.
+        <br>
+        <a href="/web" class="btn btn-primary" style="display: inline-block; margin-top: 14px; padding: 7px 16px; text-decoration: none;">
+          <i class="fa-solid fa-compass"></i> Browse Manga Catalog
+        </a>
+      </div>
+    `;
     return;
   }
 
