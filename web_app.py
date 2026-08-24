@@ -434,13 +434,19 @@ def register_web_routes(app, bot_getter=None):
     def api_get_chapter_file(channel_id, chapter):
         chap_doc = get_chapter_file(channel_id, chapter)
         manga = get_manga_by_id(channel_id) or {}
-        channel_link = manga.get("channel_link") or f"https://t.me/c/{str(channel_id)[4:]}/1"
+        invite_link = manga.get("channel_link") or f"https://t.me/c/{str(channel_id)[4:]}/1"
+
+        # Build exact direct post link if msg_id is known
+        direct_post_link = invite_link
+        if chap_doc and chap_doc.get("msg_id"):
+            from channel_handler import build_post_link
+            direct_post_link = build_post_link(channel_id, chap_doc["msg_id"], invite_link)
 
         if not chap_doc or not chap_doc.get("file_id"):
             return jsonify({
                 "success": False,
-                "error": f"Chapter {chapter} PDF file not cached yet",
-                "channel_link": channel_link
+                "error": f"Chapter {chapter} is available in Telegram channel.",
+                "channel_link": direct_post_link
             }), 404
 
         file_id = chap_doc["file_id"]
@@ -452,10 +458,10 @@ def register_web_routes(app, bot_getter=None):
                     # Redirect client directly to Telegram's secure CDN stream
                     return redirect(tg_file.file_path)
             except Exception as e:
-                logger.error(f"Failed to fetch Telegram PDF file {file_id}: {e}")
+                logger.warning(f"Telegram Bot API limit on get_file for {file_id} (>20MB): {e}")
 
         return jsonify({
             "success": False,
-            "error": "Failed to resolve file link from Telegram",
-            "channel_link": channel_link
+            "error": "This chapter is available directly in the Telegram channel.",
+            "channel_link": direct_post_link
         }), 502
