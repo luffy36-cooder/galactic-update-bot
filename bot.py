@@ -221,10 +221,13 @@ def main():
 
     dp.add_error_handler(error_handler)
 
-    # Register Telegram Bot Command Menu
+    # Register Telegram Bot Command Menu (Users & Admins)
     try:
-        from telegram import BotCommand
-        updater.bot.set_my_commands([
+        from telegram import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
+        from database import get_all_sudo
+        from config import BOT_OWNER_ID
+
+        user_cmds = [
             BotCommand("start", "🚀 Start Bot & Mini App"),
             BotCommand("web", "🌐 Open Manga Catalog & Live Reader"),
             BotCommand("webprofile", "👤 Visual Reading Profile"),
@@ -237,8 +240,39 @@ def main():
             BotCommand("toprated", "⭐ Top Rated Manga"),
             BotCommand("leaderboard", "🏆 Reader Leaderboard"),
             BotCommand("help", "📖 Complete Command Guide")
-        ])
-        logger.info("✅ Telegram Bot Command Menu successfully updated!")
+        ]
+
+        admin_cmds = [
+            BotCommand("start", "🚀 Start Bot & Mini App"),
+            BotCommand("web", "🌐 Manga Catalog & Live Reader"),
+            BotCommand("webprofile", "👤 Visual Reading Profile"),
+            BotCommand("manga", "🔍 Search Manga"),
+            BotCommand("scanallchannels", "🛰️ Scan Past Channel PDFs"),
+            BotCommand("syncchapters", "🔄 Auto-Sync Chapter Counts"),
+            BotCommand("add", "➕ Register New Manga Channel"),
+            BotCommand("requestlist", "📋 Review User Requests"),
+            BotCommand("replyreq", "✉️ Direct DM Reply to User"),
+            BotCommand("broadcast", "📢 Channel Broadcast"),
+            BotCommand("dmbroadcast", "📬 DM Broadcast to Users"),
+            BotCommand("stats", "📊 Bot Statistics"),
+            BotCommand("sudo", "🛡️ List Sudo Admins"),
+            BotCommand("help", "📖 Help & Guide")
+        ]
+
+        # 1. Set default command menu for all users
+        updater.bot.set_my_commands(user_cmds, scope=BotCommandScopeDefault())
+
+        # 2. Set exclusive admin command menu for Owner and Sudo admins
+        all_admins = set(get_all_sudo() or [])
+        all_admins.add(BOT_OWNER_ID)
+
+        for admin_id in all_admins:
+            try:
+                updater.bot.set_my_commands(admin_cmds, scope=BotCommandScopeChat(chat_id=admin_id))
+            except Exception as e:
+                logger.debug(f"Could not set admin commands for {admin_id}: {e}")
+
+        logger.info("✅ Telegram Bot Command Menu successfully updated for Users & Admins!")
     except Exception as e:
         logger.warning(f"Could not update Telegram Bot Command Menu: {e}")
 
