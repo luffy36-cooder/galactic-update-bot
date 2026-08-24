@@ -199,14 +199,16 @@ def register_web_routes(app, bot_getter=None):
         hold_count = len(manga_lists.get("hold", []))
         rank_title = get_rank_title(read_count)
 
-        # Hydrate manga lists with titles, links, and bookmark chapters
+        # Hydrate manga lists using in-memory cache for instant <10ms loading
         bms_map = { (b.get("manga") or b.get("name", "")).lower(): b.get("chapter") for b in bookmarks }
         user_ratings_map = { r["channel_id"]: r["rating"] for r in ratings_col.find({"user_id": user_id}, {"channel_id": 1, "rating": 1}) }
+        all_manga_dict = { m["channel_id"]: m for m in get_all_manga_cached() if "channel_id" in m }
+
         hydrated_shelves = {}
         for shelf_name, cids in manga_lists.items():
             hydrated_shelves[shelf_name] = []
             for cid in cids:
-                manga = get_manga_by_id(cid)
+                manga = all_manga_dict.get(cid) or get_manga_by_id(cid)
                 if manga:
                     m_name = manga.get("name", "Unknown")
                     bm_chap = bms_map.get(m_name.lower())

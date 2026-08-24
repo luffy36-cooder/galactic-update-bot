@@ -1,17 +1,20 @@
 import logging
-import traceback
 import re
-from datetime import datetime
-from html import escape as quote_html
+import html
+from datetime import datetime, timezone
 from bson import ObjectId
+from rapidfuzz import process, fuzz
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import CallbackContext
 
-from database import is_sudo, request_col
-from config import LOG_CHANNEL_ID, BOT_OWNER_ID
+from database import is_sudo, get_all_sudo, request_col, get_all_manga_cached
+from config import LOG_CHANNEL_ID, BOT_OWNER_ID, WEB_APP_URL
 
 logger = logging.getLogger(__name__)
+
+# State dictionary for interactive admin custom messages: {admin_id: (req_id, target_user_id, action_type)}
+waiting_admin_reply = {}
 
 
 def is_admin(user_id: int) -> bool:
@@ -34,227 +37,422 @@ def log_to_channel(context: CallbackContext, text: str):
         logger.warning(f"[LOG ERROR] {e}")
 
 
+# =========================================================
+# 📨 Main Request Command & Text Handler
+# Supports: /request <manga>, #request <manga>, request <manga>
+# =========================================================
 def request_manga(update: Update, context: CallbackContext):
     if not update.message:
         return
 
-    user = update.effective_user
-    text = update.message.text or ""
+    # Check if admin is currently replying to a user's request
+    if handle_admin_reply_text(update, context):
+        return
 
+    user = update.effective_user
+    text = (update.message.text or "").strip()
+    if not text:
+        return
+
+    # Extract query from /request, #request, or 'request <name>'
+    query = ""
     if text.startswith("/request"):
         query = text.split(' ', 1)[1].strip() if ' ' in text else ""
     elif text.lower().startswith("#request"):
         query = text[len("#request"):].strip()
+    elif text.lower().startswith("request "):
+        query = text[len("request "):].strip()
+    elif update.effective_chat.type == "private" and not text.startswith("/"):
+        # In private chat, any standalone text is treated as a request
+        query = text
     else:
         return
 
     if not query or not is_valid_manga_name(query):
-        update.message.reply_text("⚠️ Please enter a valid manga name using letters or numbers.")
-        log_to_channel(context, f"❗ <b>Invalid Request Attempt</b> by <code>{quote_html(user.full_name)}</code> (ID: <code>{user.id}</code>) - Sent: <code>{quote_html(query)}</code>")
+        update.message.reply_text("⚠️ Please provide a valid manga or manhwa name.\n\n📌 <b>Usage:</b> <code>/request <manga name></code>", parse_mode="HTML")
         return
 
-    if len(query) > 100:
-        update.message.reply_text("⚠️ Manga name too long. Please keep it under 100 characters.")
+    if len(query) > 120:
+        update.message.reply_text("⚠️ Manga name too long. Please keep it under 120 characters.")
         return
 
+    # 1. 🔒 Verify user has started the bot in PM (Can receive bot DMs)
+    can_dm = False
     try:
-        context.bot.send_message(
-            chat_id=user.id,
-            text="📬 Manga request received successfully! Thank you for your request. We'll do our best to upload it as soon as possible~ 💖"
-        )
+        context.bot.send_chat_action(chat_id=user.id, action="typing")
+        can_dm = True
     except Exception:
-        update.message.reply_text("⚠️ Please start the bot in private first before requesting manga!\nTap here 👉 @Galactic_Update_bot and press START!")
-        log_to_channel(context, f"❌ <b>Request Blocked - Cannot DM</b>\n👤 <code>{quote_html(user.full_name)}</code>\n🆔 <code>{user.id}</code>\n📖 <b>{quote_html(query)}</b>")
+        can_dm = False
+
+    if not can_dm:
+        bot_username = context.bot.username or "Galactic_Update_bot"
+        start_url = f"https://t.me/{bot_username}?start=req"
+        btn = InlineKeyboardMarkup([[InlineKeyboardButton("🚀 Start Bot in Private", url=start_url)]])
+        update.message.reply_text(
+            f"❌ <b>Please start the bot first!</b>\n\n"
+            f"Hey {user.mention_html()}, you must start the bot in private first so we can notify you via DM when your requested manga is uploaded!",
+            reply_markup=btn,
+            parse_mode="HTML"
+        )
         return
 
+    # 2. 🔍 Check if Manhwa is ALREADY UPLOADED in Database
+    all_manga = get_all_manga_cached()
+    names = [m.get("name", "") for m in all_manga if m.get("name")]
+    if names:
+        match = process.extractOne(query, names, scorer=fuzz.token_sort_ratio)
+        if match and match[1] >= 82:
+            match_manga = next((m for m in all_manga if m.get("name") == match[0]), None)
+            if match_manga:
+                m_name = match_manga.get("name")
+                m_cid = match_manga.get("channel_id")
+                m_chaps = match_manga.get("total_chapters") or "Available"
+                m_link = match_manga.get("channel_link") or (f"https://t.me/c/{str(m_cid)[4:]}/1" if m_cid else "https://t.me")
+
+                buttons = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📖 Read in Channel", url=m_link)],
+                    [InlineKeyboardButton("🚀 Open in Manga Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))]
+                ])
+
+                update.message.reply_text(
+                    f"🎉 <b>Great news! This manga is already uploaded!</b>\n\n"
+                    f"📚 <b>{html.escape(m_name)}</b>\n"
+                    f"📖 Chapters: <b>{m_chaps}</b>\n\n"
+                    f"🔗 <i>Tap below to start reading right now:</i>",
+                    reply_markup=buttons,
+                    parse_mode="HTML"
+                )
+                return
+
+    # 3. 🚫 Check for DUPLICATE Pending Requests
     existing = request_col.find_one({
         "manga_name": {"$regex": f"^{re.escape(query)}$", "$options": "i"},
         "status": "pending"
     })
-
     if existing:
-        update.message.reply_text("⚠️ This manga has already been requested and is pending review~ 🕒")
-        log_to_channel(context, f"🛑 <b>Duplicate Request Blocked</b>\n👤 <code>{quote_html(user.full_name)}</code>\n📖 <b>{quote_html(query)}</b>")
+        update.message.reply_text(
+            f"📌 <b>Already in Queue!</b>\n\n"
+            f"📚 <b>{html.escape(query)}</b> has already been requested by a community member and is currently pending admin review! 🕒",
+            parse_mode="HTML"
+        )
         return
 
-    request_col.insert_one({
+    # 4. 📝 Insert new request into Database
+    now_utc = datetime.now(timezone.utc)
+    res = request_col.insert_one({
         "user_id": user.id,
         "username": user.full_name,
+        "user_handle": f"@{user.username}" if user.username else "No handle",
         "manga_name": query,
         "status": "pending",
-        "timestamp": datetime.utcnow()
+        "timestamp": now_utc
     })
+    req_id = str(res.inserted_id)
 
-    update.message.reply_text("✅ Your manga request has been submitted to the bot admin! 📬")
-    log_to_channel(context, f"📥 <b>New Manga Request</b>\n👤 <code>{quote_html(user.full_name)}</code>\n🆔 <code>{user.id}</code>\n📖 <b>{quote_html(query)}</b>")
+    # 5. 📬 Notify User
+    update.message.reply_text(
+        f"✅ <b>Request Submitted!</b>\n\n"
+        f"📚 <b>{html.escape(query)}</b> has been sent to our admin team! You will receive a direct DM as soon as it is reviewed or uploaded. 💕",
+        parse_mode="HTML"
+    )
+
+    # 6. 🚨 Send Instant DM Alert to Admins & Owner
+    admin_text = (
+        f"📨 <b>New Manga Request Received!</b> 🌌\n\n"
+        f"📚 <b>Manga:</b> <code>{html.escape(query)}</code>\n"
+        f"👤 <b>User:</b> <a href='tg://user?id={user.id}'>{html.escape(user.full_name)}</a> ({f'@{user.username}' if user.username else f'ID: {user.id}'})\n"
+        f"🆔 <b>User ID:</b> <code>{user.id}</code>\n"
+        f"📅 <b>Date:</b> {now_utc.strftime('%Y-%m-%d %H:%M UTC')}"
+    )
+
+    admin_keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Accept", callback_data=f"req_acc|{req_id}|{user.id}"),
+            InlineKeyboardButton("❌ Decline", callback_data=f"req_dec|{req_id}|{user.id}")
+        ],
+        [
+            InlineKeyboardButton("💬 Send Message to User", callback_data=f"req_msg|{req_id}|{user.id}")
+        ]
+    ])
+
+    admin_ids = set([BOT_OWNER_ID] + get_all_sudo())
+    for aid in admin_ids:
+        try:
+            context.bot.send_message(
+                chat_id=aid,
+                text=admin_text,
+                parse_mode="HTML",
+                reply_markup=admin_keyboard
+            )
+        except Exception:
+            pass
+
+    log_to_channel(context, admin_text)
 
 
+# =========================================================
+# 📋 /requestlist — View and manage pending requests (Admins)
+# =========================================================
 def request_list(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-
     if not is_admin(user_id):
-        update.message.reply_text("⛔ Only sudo users can access the request list.")
-        return
+        return update.message.reply_text("⛔ Only admins can view the request list.")
 
-    log_to_channel(context, f"📋 <b>Request List Accessed</b>\n👮 <code>{quote_html(update.effective_user.full_name)}</code> (ID: <code>{user_id}</code>)")
-
-    requests = list(request_col.find({"status": "pending"}).sort("timestamp", -1))
+    requests = list(request_col.find({"status": "pending"}).sort("timestamp", -1).limit(10))
     if not requests:
-        update.message.reply_text("📭 No pending manga requests found.")
-        return
+        return update.message.reply_text("📭 No pending manga requests found.")
 
-    for req in requests[:15]:  # show up to 15 pending requests
+    update.message.reply_text(f"📋 <b>Pending Manga Requests ({len(requests)}):</b>", parse_mode="HTML")
+
+    for req in requests:
         req_id = str(req.get("_id"))
-        req_user_id = str(req.get("user_id"))
+        target_uid = str(req.get("user_id"))
+        m_name = req.get("manga_name", "Unknown")
+        u_name = req.get("username", "Unknown")
+        u_handle = req.get("user_handle", "")
 
-        if not req_id or not req_user_id:
-            continue
-
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Complete", callback_data=f"complete_request|{req_id}|{req_user_id}"),
-            InlineKeyboardButton("❌ Deny", callback_data=f"deny_request|{req_id}|{req_user_id}")
-        ]])
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ Accept", callback_data=f"req_acc|{req_id}|{target_uid}"),
+                InlineKeyboardButton("❌ Decline", callback_data=f"req_dec|{req_id}|{target_uid}")
+            ],
+            [
+                InlineKeyboardButton("💬 Message User", callback_data=f"req_msg|{req_id}|{target_uid}")
+            ]
+        ])
 
         update.message.reply_text(
-            f"📖 <b>Request:</b> {quote_html(req.get('manga_name', ''))}\n👤 <b>Requested by:</b> {quote_html(req.get('username', 'Unknown'))}",
+            f"📚 <b>{html.escape(m_name)}</b>\n"
+            f"👤 Requested by: <b>{html.escape(u_name)}</b> ({u_handle})\n"
+            f"🆔 User ID: <code>{target_uid}</code>",
             parse_mode="HTML",
             reply_markup=keyboard
         )
 
 
-def complete_request_callback(update: Update, context: CallbackContext):
+# =========================================================
+# 🔘 Interactive Callback Handlers: Accept / Decline / Message
+# =========================================================
+def handle_request_callbacks(update: Update, context: CallbackContext):
     query = update.callback_query
     try:
         query.answer()
-    except Exception as e:
-        logger.warning(f"❌ query.answer failed: {e}")
+    except Exception:
+        pass
 
     admin_user = query.from_user
     if not is_admin(admin_user.id):
-        try:
-            query.edit_message_text("⛔ You are not allowed to perform this action.")
-        except Exception:
-            pass
-        return
+        return query.edit_message_text("⛔ You are not allowed to perform this action.")
 
-    try:
-        parts = query.data.split("|")
-        if len(parts) != 3:
-            raise ValueError("Expected 3 parts in callback data.")
-        _, req_id_str, user_id_str = parts
+    data = query.data or ""
+    parts = data.split("|")
+    action = parts[0]
+
+    # --- 1. ACCEPT FLOW ---
+    if action == "req_acc":
+        if len(parts) < 3: return
+        req_id_str, user_id_str = parts[1], parts[2]
         req_id = ObjectId(req_id_str)
         target_user_id = int(user_id_str)
-    except Exception as e:
-        logger.error(f"❌ Failed to parse callback data: {query.data} | Error: {e}")
-        try:
-            query.edit_message_text("⚠️ Invalid callback data received.")
-        except Exception:
-            pass
-        return
 
-    try:
-        request_doc = request_col.find_one({"_id": req_id})
-        if not request_doc:
-            query.edit_message_text("⚠️ Request not found or already processed.")
-            return
+        req_doc = request_col.find_one({"_id": req_id})
+        if not req_doc:
+            return query.edit_message_text("⚠️ Request not found or already processed.")
+
+        manga_name = req_doc.get("manga_name", "Manga")
+
+        # Present options: Quick Instant Accept or Accept with Custom Message
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✨ Quick Accept DM", callback_data=f"req_sendacc|{req_id_str}|{target_user_id}"),
+                InlineKeyboardButton("✍️ Custom Note", callback_data=f"req_customacc|{req_id_str}|{target_user_id}")
+            ]
+        ])
+
+        query.edit_message_text(
+            f"✅ <b>Accepting Request:</b> <code>{html.escape(manga_name)}</code>\n\n"
+            f"Choose whether to send an instant acceptance notification or attach a custom message/link for the user:",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+
+    # --- 2. INSTANT ACCEPT EXECUTION ---
+    elif action == "req_sendacc":
+        if len(parts) < 3: return
+        req_id_str, user_id_str = parts[1], parts[2]
+        req_id = ObjectId(req_id_str)
+        target_user_id = int(user_id_str)
+
+        req_doc = request_col.find_one({"_id": req_id})
+        manga_name = req_doc.get("manga_name", "Manga") if req_doc else "Manga"
 
         request_col.update_one({"_id": req_id}, {"$set": {"status": "completed", "completed_by": admin_user.id}})
-        manga_name = request_doc.get("manga_name", "Unknown")
 
-        user_notified = False
         try:
             context.bot.send_message(
                 chat_id=target_user_id,
-                text=f"🎉 Your manga request for <b>{quote_html(manga_name)}</b> has been fulfilled! Happy reading 💕",
+                text=(
+                    f"🎉 <b>Your Manga Request Was Accepted!</b> 🌌\n\n"
+                    f"📚 <b>{html.escape(manga_name)}</b> has been approved by our admin team!\n\n"
+                    f"<i>We are uploading the chapters now. Keep an eye on our channels! 💕</i>"
+                ),
                 parse_mode="HTML"
             )
-            user_notified = True
+            query.edit_message_text(f"✅ <b>Accepted!</b> User notified via DM about <b>{html.escape(manga_name)}</b>.", parse_mode="HTML")
         except Exception as e:
-            logger.warning(f"❌ Could not notify user {target_user_id}: {e}")
+            query.edit_message_text(f"✅ Marked accepted, but could not DM user (Blocked/Privacy): {e}")
 
-        msg = f"✅ Request for <b>{quote_html(manga_name)}</b> was completed."
-        if not user_notified:
-            msg += " <i>(User could not be DMed)</i>"
-        query.edit_message_text(msg, parse_mode="HTML")
-
-        log_to_channel(
-            context,
-            f"✅ <b>Request Completed</b>\n📖 <b>{quote_html(manga_name)}</b>\n👤 User ID: <code>{target_user_id}</code>\n👮 Admin: <code>{quote_html(admin_user.full_name)}</code>"
-        )
-
-    except Exception as e:
-        tb = traceback.format_exc()
-        logger.error(f"Error in complete_request_callback:\n{tb}")
-        try:
-            query.edit_message_text("❌ An error occurred while completing the request.")
-        except Exception:
-            pass
-
-
-def deny_request_callback(update: Update, context: CallbackContext):
-    query = update.callback_query
-    try:
-        query.answer()
-    except Exception as e:
-        logger.warning(f"❌ query.answer failed: {e}")
-
-    admin_user = query.from_user
-    if not is_admin(admin_user.id):
-        try:
-            query.edit_message_text("⛔ You are not allowed to perform this action.")
-        except Exception:
-            pass
-        return
-
-    try:
-        parts = query.data.split("|")
-        if len(parts) != 3:
-            raise ValueError("Expected 3 parts in callback data.")
-        _, req_id_str, user_id_str = parts
+    # --- 3. DECLINE MENU ---
+    elif action == "req_dec":
+        if len(parts) < 3: return
+        req_id_str, user_id_str = parts[1], parts[2]
         req_id = ObjectId(req_id_str)
         target_user_id = int(user_id_str)
-    except Exception as e:
-        logger.error(f"❌ Failed to parse callback data: {query.data} | Error: {e}")
-        try:
-            query.edit_message_text("⚠️ Invalid callback data received.")
-        except Exception:
-            pass
-        return
 
-    try:
-        request_doc = request_col.find_one({"_id": req_id})
-        if not request_doc:
-            query.edit_message_text("⚠️ Request not found or already processed.")
-            return
+        req_doc = request_col.find_one({"_id": req_id})
+        manga_name = req_doc.get("manga_name", "Manga") if req_doc else "Manga"
 
-        request_col.update_one({"_id": req_id}, {"$set": {"status": "denied", "denied_by": admin_user.id}})
-        manga_name = request_doc.get("manga_name", "Unknown")
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📚 Already in Catalog", callback_data=f"req_senddec|{req_id_str}|{target_user_id}|already")],
+            [InlineKeyboardButton("🚫 Not a Manga/Manhwa", callback_data=f"req_senddec|{req_id_str}|{target_user_id}|notmanga")],
+            [InlineKeyboardButton("🔒 Licensed / Unavailable", callback_data=f"req_senddec|{req_id_str}|{target_user_id}|licensed")],
+            [InlineKeyboardButton("✍️ Custom Reason...", callback_data=f"req_customdec|{req_id_str}|{target_user_id}")]
+        ])
 
-        user_notified = False
+        query.edit_message_text(
+            f"❌ <b>Decline Request:</b> <code>{html.escape(manga_name)}</code>\n\nSelect the reason to send to the user:",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+
+    # --- 4. PRESET DECLINE EXECUTION ---
+    elif action == "req_senddec":
+        if len(parts) < 4: return
+        req_id_str, user_id_str, reason_code = parts[1], parts[2], parts[3]
+        req_id = ObjectId(req_id_str)
+        target_user_id = int(user_id_str)
+
+        reasons = {
+            "already": "This title is already available in our channels/web app. Please search using /manga or browse the Web Mini App.",
+            "notmanga": "The requested title is not a valid manga, manhwa, or webtoon.",
+            "licensed": "This title is currently licensed/DMCA restricted and cannot be uploaded at this time."
+        }
+        reason_text = reasons.get(reason_code, "Could not be fulfilled at this time.")
+
+        req_doc = request_col.find_one({"_id": req_id})
+        manga_name = req_doc.get("manga_name", "Manga") if req_doc else "Manga"
+
+        request_col.update_one({"_id": req_id}, {"$set": {"status": "denied", "denied_by": admin_user.id, "reason": reason_text}})
+
         try:
             context.bot.send_message(
                 chat_id=target_user_id,
-                text=f"❌ Your manga request for <b>{quote_html(manga_name)}</b> could not be fulfilled at this time.",
+                text=(
+                    f"⚠️ <b>Manga Request Update</b>\n\n"
+                    f"📚 <b>{html.escape(manga_name)}</b> could not be uploaded.\n"
+                    f"💬 <b>Reason:</b> {html.escape(reason_text)}"
+                ),
                 parse_mode="HTML"
             )
-            user_notified = True
+            query.edit_message_text(f"❌ <b>Declined!</b> User notified with reason: <i>{reason_text}</i>", parse_mode="HTML")
         except Exception as e:
-            logger.warning(f"❌ Could not notify user {target_user_id}: {e}")
+            query.edit_message_text(f"❌ Marked declined (could not DM user: {e})")
 
-        msg = f"❌ Request for <b>{quote_html(manga_name)}</b> was denied."
-        if not user_notified:
-            msg += " <i>(User could not be DMed)</i>"
-        query.edit_message_text(msg, parse_mode="HTML")
+    # --- 5. CUSTOM MESSAGE PROMPTS ---
+    elif action in ["req_msg", "req_customacc", "req_customdec"]:
+        if len(parts) < 3: return
+        req_id_str, user_id_str = parts[1], parts[2]
+        target_user_id = int(user_id_str)
 
-        log_to_channel(
-            context,
-            f"❌ <b>Request Denied</b>\n📖 <b>{quote_html(manga_name)}</b>\n👤 User ID: <code>{target_user_id}</code>\n👮 Admin: <code>{quote_html(admin_user.full_name)}</code>"
+        waiting_admin_reply[admin_user.id] = {
+            "req_id": req_id_str,
+            "target_user_id": target_user_id,
+            "action": action
+        }
+
+        query.edit_message_text(
+            f"✍️ <b>Send Direct Message to User:</b>\n\n"
+            f"Now simply send your reply message in this chat, and the bot will immediately forward it to the user as a DM!\n\n"
+            f"<i>Type /cancel to abort.</i>",
+            parse_mode="HTML"
         )
 
+
+# =========================================================
+# 💬 Admin Custom Reply Message Receiver
+# =========================================================
+def handle_admin_reply_text(update: Update, context: CallbackContext) -> bool:
+    """Captures admin's text when in waiting_admin_reply state and sends as DM."""
+    if not update.message or not update.message.text:
+        return False
+
+    admin_id = update.effective_user.id
+    if admin_id not in waiting_admin_reply:
+        return False
+
+    state = waiting_admin_reply.pop(admin_id)
+    text = update.message.text.strip()
+
+    if text.lower() == "/cancel":
+        update.message.reply_text("❌ Action cancelled.")
+        return True
+
+    target_uid = state["target_user_id"]
+    req_id_str = state["req_id"]
+    action = state["action"]
+
+    req_doc = request_col.find_one({"_id": ObjectId(req_id_str)}) if req_id_str else None
+    m_name = req_doc.get("manga_name", "Manga") if req_doc else "Manga"
+
+    try:
+        if action == "req_customacc":
+            request_col.update_one({"_id": ObjectId(req_id_str)}, {"$set": {"status": "completed", "completed_by": admin_id, "admin_note": text}})
+            dm_text = (
+                f"🎉 <b>Your Manga Request Was Accepted!</b> 🌌\n\n"
+                f"📚 <b>{html.escape(m_name)}</b>\n"
+                f"💬 <b>Admin Note:</b> {html.escape(text)}\n\n"
+                f"<i>Happy reading! 💕</i>"
+            )
+        elif action == "req_customdec":
+            request_col.update_one({"_id": ObjectId(req_id_str)}, {"$set": {"status": "denied", "denied_by": admin_id, "reason": text}})
+            dm_text = (
+                f"⚠️ <b>Manga Request Update</b>\n\n"
+                f"📚 <b>{html.escape(m_name)}</b>\n"
+                f"💬 <b>Reason:</b> {html.escape(text)}"
+            )
+        else:  # Direct message
+            dm_text = (
+                f"💬 <b>Message from Bot Admin regarding '{html.escape(m_name)}':</b>\n\n"
+                f"{html.escape(text)}"
+            )
+
+        context.bot.send_message(chat_id=target_uid, text=dm_text, parse_mode="HTML")
+        update.message.reply_text(f"✅ <b>Message Sent!</b> Delivered to user <code>{target_uid}</code> successfully!", parse_mode="HTML")
     except Exception as e:
-        tb = traceback.format_exc()
-        logger.error(f"Error in deny_request_callback:\n{tb}")
-        try:
-            query.edit_message_text("❌ An error occurred while denying the request.")
-        except Exception:
-            pass
+        update.message.reply_text(f"❌ Failed to deliver DM to user {target_uid}: {e}")
+
+    return True
+
+
+# =========================================================
+# 💬 /replyreq <user_id> <message> (Command alternative)
+# =========================================================
+def replyreq_cmd(update: Update, context: CallbackContext):
+    if not is_admin(update.effective_user.id):
+        return update.message.reply_text("🚫 Sudo only.")
+
+    if len(context.args) < 2:
+        return update.message.reply_text("📌 Usage: <code>/replyreq <user_id> <your message></code>", parse_mode="HTML")
+
+    try:
+        target_uid = int(context.args[0])
+        msg_text = " ".join(context.args[1:]).strip()
+
+        context.bot.send_message(
+            chat_id=target_uid,
+            text=f"💬 <b>Message from Galactic Bot Admin:</b>\n\n{html.escape(msg_text)}",
+            parse_mode="HTML"
+        )
+        update.message.reply_text(f"✅ Message sent to <code>{target_uid}</code>!", parse_mode="HTML")
+    except Exception as e:
+        update.message.reply_text(f"❌ Failed to send message: {e}")

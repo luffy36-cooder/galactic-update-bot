@@ -652,14 +652,15 @@ body {
 /* Level & XP Progress Bar */
 .level-progress-wrap {
   width: 100%;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .level-info-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+  gap: 12px;
 }
 
 .level-badge {
@@ -667,12 +668,14 @@ body {
   font-weight: 800;
   color: #38bdf8;
   letter-spacing: 0.2px;
+  white-space: nowrap;
 }
 
 .level-xp-text {
   font-size: 10px;
   font-weight: 700;
-  color: var(--text-muted);
+  color: #94a3b8;
+  white-space: nowrap;
 }
 
 .level-progress-bar {

@@ -30,12 +30,20 @@ def search_by_text_if_enabled(update: Update, context: CallbackContext):
     if chat.type not in ["group", "supergroup"]:
         return
 
+    text = (update.message.text or "").strip()
+    if not text:
+        return
+
+    # Route #request <name> or request <name> directly to request_manga
+    if text.lower().startswith("#request") or text.lower().startswith("request "):
+        from request_handler import request_manga
+        return request_manga(update, context)
+
     mode = get_group_mode(chat.id)
     if mode != "text":
         return
 
-    text = update.message.text.strip()
-    if not text or len(text.split()) > 6:
+    if len(text.split()) > 6:
         return
 
     send_search_result(update, context, text)

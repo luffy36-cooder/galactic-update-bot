@@ -96,8 +96,8 @@ from callbacks import handle_status_buttons, select_manga_callback
 from request_handler import (
     request_manga,
     request_list,
-    complete_request_callback,
-    deny_request_callback,
+    handle_request_callbacks,
+    replyreq_cmd,
 )
 
 # 🔁 Inline Systems
@@ -173,6 +173,7 @@ def main():
     # 📨 Manga Requests
     dp.add_handler(CommandHandler("request", request_manga))
     dp.add_handler(CommandHandler("requestlist", request_list))
+    dp.add_handler(CommandHandler("replyreq", replyreq_cmd))
 
     # 📚 User List Commands
     dp.add_handler(CommandHandler("read", read_cmd))
@@ -194,8 +195,7 @@ def main():
     dp.add_handler(CallbackQueryHandler(help_button_handler, pattern="^help_"))
     dp.add_handler(CallbackQueryHandler(handle_bookmark_buttons, pattern="^bm_"))
     dp.add_handler(CallbackQueryHandler(handle_status_buttons, pattern="^(read|unread|fav|unfav|complete|uncomplete|drop|undrop|hold|unhold|view|showrate|setrate|subtoggle)_"))
-    dp.add_handler(CallbackQueryHandler(complete_request_callback, pattern="^complete_request"))
-    dp.add_handler(CallbackQueryHandler(deny_request_callback, pattern="^deny_request"))
+    dp.add_handler(CallbackQueryHandler(handle_request_callbacks, pattern="^req_"))
     dp.add_handler(CallbackQueryHandler(select_manga_callback, pattern=r"^select_"))
 
     # 🔍 Inline Search & Group Text Search
