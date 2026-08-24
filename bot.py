@@ -221,6 +221,25 @@ def main():
 
     dp.add_error_handler(error_handler)
 
+    # Register Telegram Bot Command Menu
+    try:
+        from telegram import BotCommand
+        updater.bot.set_my_commands([
+            BotCommand("start", "🚀 Start Bot & Mini App"),
+            BotCommand("web", "🌐 Open Manga Catalog & Reader"),
+            BotCommand("webprofile", "👤 Visual Reading Profile"),
+            BotCommand("manga", "🔍 Search Manga"),
+            BotCommand("request", "📨 Request a Manga"),
+            BotCommand("bookmark", "📌 Save Bookmark"),
+            BotCommand("mybookmarks", "🔖 View Bookmarks"),
+            BotCommand("toprated", "⭐ Top Rated Manga"),
+            BotCommand("leaderboard", "🏆 Reader Leaderboard"),
+            BotCommand("help", "📖 Help & Guide")
+        ])
+        logger.info("✅ Telegram Bot Command Menu successfully updated!")
+    except Exception as e:
+        logger.warning(f"Could not update Telegram Bot Command Menu: {e}")
+
     logger.info("🤖 Galactic Manga Bot initialized with PTB v13.15 & 8 worker threads! 🛸🚀")
     updater.start_polling(drop_pending_updates=True)
     updater.idle()

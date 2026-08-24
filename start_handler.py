@@ -31,6 +31,9 @@ def log_to_channel(context: CallbackContext, text: str):
 def start_cmd(update: Update, context: CallbackContext):
     user = update.effective_user.first_name or "Senpai"
     user_id = update.effective_user.id
+    bot_username = context.bot.username or "Galactic_Update_bot"
+    is_private = update.effective_chat.type == "private" if update.effective_chat else True
+
     india_time = datetime.now(timezone("Asia/Kolkata"))
     hour = india_time.hour
 
@@ -53,10 +56,17 @@ def start_cmd(update: Update, context: CallbackContext):
         "/read | /bookmark | /request | /help"
     )
 
+    if is_private:
+        web_btn = InlineKeyboardButton("🚀 Launch Manga Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))
+        profile_btn = InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))
+    else:
+        web_btn = InlineKeyboardButton("🚀 Launch Manga Web App", url=f"https://t.me/{bot_username}?start=web")
+        profile_btn = InlineKeyboardButton("👤 Web Profile", url=f"https://t.me/{bot_username}?start=webprofile")
+
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚀 Launch Manga Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))],
+        [web_btn],
         [
-            InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile")),
+            profile_btn,
             InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat="")
         ],
         [
@@ -96,6 +106,7 @@ def help_cmd(update: Update, context: CallbackContext):
     user = update.effective_user.first_name or "Senpai"
     user_id = update.effective_user.id
     bot_username = context.bot.username or "Galactic_Update_bot"
+    is_private = update.effective_chat.type == "private" if update.effective_chat else True
 
     text = (
         "🌌 <b>Galactic Manga Bot — Command Guide</b> 📖\n\n"
@@ -140,11 +151,15 @@ def help_cmd(update: Update, context: CallbackContext):
         "• <code>/broadcast</code> & <code>/dmbroadcast</code> — Announce updates"
     )
 
+    if is_private:
+        web_btn = InlineKeyboardButton("🚀 Launch Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))
+        profile_btn = InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))
+    else:
+        web_btn = InlineKeyboardButton("🚀 Launch Web App", url=f"https://t.me/{bot_username}?start=web")
+        profile_btn = InlineKeyboardButton("👤 Web Profile", url=f"https://t.me/{bot_username}?start=webprofile")
+
     buttons = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("🚀 Launch Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web")),
-            InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))
-        ],
+        [web_btn, profile_btn],
         [
             InlineKeyboardButton("🔍 Search Guide", callback_data="help_search"),
             InlineKeyboardButton("📌 Bookmarks Guide", callback_data="help_bookmarks")
@@ -159,7 +174,10 @@ def help_cmd(update: Update, context: CallbackContext):
         ]
     ])
 
-    update.message.reply_text(text, parse_mode="HTML", reply_markup=buttons)
+    if update.message:
+        update.message.reply_text(text, parse_mode="HTML", reply_markup=buttons)
+    elif update.effective_chat:
+        update.effective_chat.send_message(text, parse_mode="HTML", reply_markup=buttons)
     log_to_channel(context, f"📖 <b>/help used</b> by <code>{user}</code> (ID: <code>{user_id}</code>)")
 
 
@@ -167,6 +185,8 @@ def help_cmd(update: Update, context: CallbackContext):
 def help_button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
+    bot_username = context.bot.username or "Galactic_Update_bot"
+    is_private = update.effective_chat.type == "private" if update.effective_chat else True
 
     section_texts = {
         "help_search": (
@@ -224,9 +244,14 @@ def help_button_handler(update: Update, context: CallbackContext):
     }
 
     text = section_texts.get(query.data, "❓ Unknown help section.")
+    
+    if is_private:
+        web_btn = InlineKeyboardButton("🚀 Launch Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))
+    else:
+        web_btn = InlineKeyboardButton("🚀 Launch Web App", url=f"https://t.me/{bot_username}?start=web")
+
     back_button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 Back to Main Help", callback_data="help_main"),
-         InlineKeyboardButton("🚀 Launch Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))]
+        [InlineKeyboardButton("🔙 Back to Main Help", callback_data="help_main"), web_btn]
     ])
 
     if query.data == "help_main":

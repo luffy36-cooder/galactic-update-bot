@@ -100,12 +100,26 @@ def _send_single_manga(update_or_query, result: dict):
     if user_rat:
         stars_str += f" • <i>Your rating: {user_rat}★</i>"
 
+    # Determine if chat is private
+    chat = getattr(update_or_query, 'effective_chat', None) or getattr(getattr(update_or_query, 'message', None), 'chat', None)
+    is_private = (chat.type == 'private') if chat else True
+
     # Action buttons
     channel_link = result.get("channel_link") or (f"https://t.me/c/{str(cid)[4:]}/1" if cid else "https://t.me")
+    reader_url = f"{WEB_APP_URL}/reader?cid={cid}&ch=1&user_id={user_id}"
+    profile_url = f"{WEB_APP_URL}/webprofile"
+
+    if is_private:
+        read_btn = InlineKeyboardButton("🚀 Read Online (App)", web_app=WebAppInfo(url=reader_url))
+        profile_btn = InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=profile_url))
+    else:
+        read_btn = InlineKeyboardButton("🚀 Read Online (App)", url=reader_url)
+        profile_btn = InlineKeyboardButton("👤 Web Profile", url=profile_url)
+
     buttons = [
         [
             InlineKeyboardButton("📖 Read in Channel", url=channel_link),
-            InlineKeyboardButton("🚀 Read Online (App)", web_app=WebAppInfo(url=f"{WEB_APP_URL}/reader?cid={cid}&ch=1&user_id={user_id}"))
+            read_btn
         ],
         [
             InlineKeyboardButton(f"{'🔕 Subscribed' if is_sub else '🔔 Subscribe'}", callback_data=f"subtoggle_{cid}_{user_id}"),
@@ -140,7 +154,7 @@ def _send_single_manga(update_or_query, result: dict):
             buttons.append(row)
             row = []
     if row:
-        row.append(InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile")))
+        row.append(profile_btn)
         buttons.append(row)
 
     keyboard = InlineKeyboardMarkup(buttons)
