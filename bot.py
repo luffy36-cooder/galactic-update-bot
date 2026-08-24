@@ -21,6 +21,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     InlineQueryHandler,
     ChatMemberHandler,
+    CallbackContext,
 )
 try:
     from telegram.ext import Filters
