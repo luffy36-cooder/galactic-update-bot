@@ -55,15 +55,22 @@ def start_cmd(update: Update, context: CallbackContext):
 
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("🚀 Launch Manga Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))],
-        [InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile")),
-         InlineKeyboardButton("🧰 Commands", callback_data="help_search")],
-        [InlineKeyboardButton("📚 My List", callback_data="help_lists"),
-         InlineKeyboardButton("📌 Bookmarks", callback_data="help_bookmarks")],
-        [InlineKeyboardButton("🔍 Search", switch_inline_query_current_chat=""),
-         InlineKeyboardButton("🌟 Recommend", callback_data="help_recommend"),
-         InlineKeyboardButton("🥇 Leaderboard", callback_data="help_leaderboard")],
-        [InlineKeyboardButton("📊 Stats", callback_data="help_stats"),
-         InlineKeyboardButton("🎛 Dashboard", callback_data="help_admin")]
+        [
+            InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile")),
+            InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat="")
+        ],
+        [
+            InlineKeyboardButton("📚 My Reading List", callback_data="help_lists"),
+            InlineKeyboardButton("📌 My Bookmarks", callback_data="help_bookmarks")
+        ],
+        [
+            InlineKeyboardButton("🥇 Leaderboard", callback_data="help_leaderboard"),
+            InlineKeyboardButton("🌟 Recommend", callback_data="help_recommend")
+        ],
+        [
+            InlineKeyboardButton("📨 Request Manga", callback_data="help_requests"),
+            InlineKeyboardButton("📖 Help Guide", callback_data="help_main")
+        ]
     ])
 
     if update.message:
@@ -134,14 +141,22 @@ def help_cmd(update: Update, context: CallbackContext):
     )
 
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚀 Open Manga Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web")),
-         InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))],
-        [InlineKeyboardButton("🔍 Search Help", callback_data="help_search"),
-         InlineKeyboardButton("📌 Bookmarks Help", callback_data="help_bookmarks")],
-        [InlineKeyboardButton("📨 Requests Help", callback_data="help_requests"),
-         InlineKeyboardButton("📚 Shelves Help", callback_data="help_lists")],
-        [InlineKeyboardButton("🥇 Leaderboard Help", callback_data="help_leaderboard"),
-         InlineKeyboardButton("🛠 Admin Help", callback_data="help_admin")]
+        [
+            InlineKeyboardButton("🚀 Launch Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web")),
+            InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))
+        ],
+        [
+            InlineKeyboardButton("🔍 Search Guide", callback_data="help_search"),
+            InlineKeyboardButton("📌 Bookmarks Guide", callback_data="help_bookmarks")
+        ],
+        [
+            InlineKeyboardButton("📨 Requests Guide", callback_data="help_requests"),
+            InlineKeyboardButton("📚 Shelves Guide", callback_data="help_lists")
+        ],
+        [
+            InlineKeyboardButton("🥇 Leaderboard Guide", callback_data="help_leaderboard"),
+            InlineKeyboardButton("🛠 Admin Guide", callback_data="help_admin")
+        ]
     ])
 
     update.message.reply_text(text, parse_mode="HTML", reply_markup=buttons)
