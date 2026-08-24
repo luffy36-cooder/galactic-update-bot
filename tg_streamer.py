@@ -12,7 +12,9 @@ from channel_handler import extract_chapter_number
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache", "pdfs")
-os.makedirs(CACHE_DIR, exist_ok=True)
+SESSION_DIR = os.path.join(os.path.dirname(__file__), "cache", "session")
+os.makedirs(SESSION_DIR, exist_ok=True)
+SESSION_FILE = os.path.join(SESSION_DIR, "galactic_streamer")
 
 
 class MTProtoStreamer:
@@ -22,17 +24,23 @@ class MTProtoStreamer:
         self.ready_event = threading.Event()
         self.thread = threading.Thread(target=self._worker, daemon=True, name="MTProtoStreamerWorker")
         self.thread.start()
-        self.ready_event.wait(timeout=15)
+        self.ready_event.wait(timeout=10)
 
     def _worker(self):
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
-        self.client = TelegramClient(MemorySession(), API_ID, API_HASH, loop=self.loop)
+        self.client = TelegramClient(SESSION_FILE, API_ID, API_HASH, loop=self.loop)
 
         async def _connect():
-            await self.client.start(bot_token=BOT_TOKEN)
-            logger.info("🚀 MTProto Telethon Streamer successfully authenticated with Telegram!")
-            self.ready_event.set()
+            try:
+                await self.client.connect()
+                if not await self.client.is_user_authorized():
+                    await self.client.start(bot_token=BOT_TOKEN)
+                logger.info("🚀 MTProto Telethon Streamer successfully authenticated with Telegram!")
+            except Exception as e:
+                logger.warning(f"MTProto authentication notice: {e}")
+            finally:
+                self.ready_event.set()
 
         self.loop.run_until_complete(_connect())
         self.loop.run_forever()

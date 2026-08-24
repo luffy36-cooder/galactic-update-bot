@@ -462,6 +462,7 @@ def register_web_routes(app, bot_getter=None):
                 "channel_link": direct_post_link
             }), 404
 
+        # 1. Try local MTProto disk cache & fast range stream first
         msg_id = chap_doc.get("msg_id")
         if msg_id:
             try:
@@ -477,7 +478,18 @@ def register_web_routes(app, bot_getter=None):
                         conditional=True
                     )
             except Exception as e:
-                logger.error(f"MTProto streaming failed for chapter {chapter}: {e}")
+                logger.debug(f"MTProto direct stream fallback: {e}")
+
+        # 2. Try standard Telegram Bot API CDN URL if file_id is available
+        file_id = chap_doc.get("file_id")
+        bot = bot_getter() if callable(bot_getter) else bot_getter
+        if bot and file_id and len(str(file_id)) > 20:
+            try:
+                tg_file = bot.get_file(file_id)
+                if tg_file and tg_file.file_path:
+                    return redirect(tg_file.file_path)
+            except Exception as e:
+                logger.debug(f"Bot API get_file fallback: {e}")
 
         return jsonify({
             "success": False,
