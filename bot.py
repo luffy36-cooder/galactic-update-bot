@@ -210,6 +210,12 @@ def main():
     dp.add_handler(CommandHandler("refreshchannels", refresh_channels_cmd))
     dp.add_handler(CommandHandler("checkchannels", check_channels_cmd))
 
+    # Global error handler
+    def error_handler(update: object, context: CallbackContext) -> None:
+        logger.warning(f"Handled exception: {context.error}")
+
+    dp.add_error_handler(error_handler)
+
     logger.info("🤖 Galactic Manga Bot initialized with PTB v13.15 & 8 worker threads! 🛸🚀")
     updater.start_polling(drop_pending_updates=True)
     updater.idle()

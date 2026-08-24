@@ -77,9 +77,14 @@ def _get_cached_manga_list():
     global _manga_cache, _manga_cache_time
     now = time.time()
     if _manga_cache is None or (now - _manga_cache_time) > MANGA_CACHE_TTL:
-        _manga_cache = list(manga_col.find())
+        _manga_cache = list(manga_col.find().sort("name", 1))
         _manga_cache_time = now
     return _manga_cache
+
+
+def get_all_manga_cached():
+    """Returns in-memory cached list of all manga."""
+    return _get_cached_manga_list()
 
 
 # Initialize indexes on load

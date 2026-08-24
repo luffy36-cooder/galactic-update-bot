@@ -22,6 +22,7 @@ from database import (
     get_user_subscriptions,
     get_chapter_file,
     get_manga_chapter_list,
+    get_all_manga_cached,
 )
 from profile_handler import get_rank_title
 
@@ -107,6 +108,7 @@ def register_web_routes(app, bot_getter=None):
         user_status_map = {}
         user_bookmarks_map = {}
         user_subs_set = set()
+        user_ratings_map = {}
 
         if user_id:
             user_lists = get_user_manga_lists(user_id)
@@ -123,7 +125,29 @@ def register_web_routes(app, bot_getter=None):
 
             user_subs_set = set(get_user_subscriptions(user_id))
 
-        all_manga = list(manga_col.find().sort("name", 1))
+            # Batch load user ratings
+            from database import ratings_col
+            for doc in ratings_col.find({"user_id": user_id}, {"channel_id": 1, "rating": 1}):
+                user_ratings_map[doc.get("channel_id")] = doc.get("rating")
+
+        # Batch load all ratings in 1 single MongoDB aggregation
+        from database import ratings_col
+        pipeline = [
+            {"$group": {
+                "_id": "$channel_id",
+                "avg_rating": {"$avg": "$rating"},
+                "total_ratings": {"$sum": 1}
+            }}
+        ]
+        all_ratings = {
+            doc["_id"]: {
+                "avg_rating": round(float(doc["avg_rating"]), 1),
+                "total_ratings": int(doc["total_ratings"])
+            }
+            for doc in ratings_col.aggregate(pipeline)
+        }
+
+        all_manga = get_all_manga_cached()
         catalog = []
 
         for m in all_manga:
@@ -132,8 +156,7 @@ def register_web_routes(app, bot_getter=None):
             has_image = bool(m.get("image"))
             image_url = f"/api/image/{cid}" if has_image else "/static/images/default_cover.svg"
 
-            # Get rating summary
-            rating_summary = get_manga_rating_summary(cid, user_id) if cid else {"avg_rating": 0.0, "total_ratings": 0}
+            rating_summary = all_ratings.get(cid, {"avg_rating": 0.0, "total_ratings": 0})
 
             item = {
                 "channel_id": cid,
@@ -147,7 +170,7 @@ def register_web_routes(app, bot_getter=None):
                 "is_subscribed": (cid in user_subs_set or (user_id and "favorite" in user_status_map.get(cid, []))),
                 "avg_rating": rating_summary.get("avg_rating", 0.0),
                 "total_ratings": rating_summary.get("total_ratings", 0),
-                "user_rating": rating_summary.get("user_rating")
+                "user_rating": user_ratings_map.get(cid)
             }
             catalog.append(item)
 
