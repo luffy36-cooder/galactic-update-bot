@@ -26,6 +26,7 @@ request_col = db["manga_requests"]
 broadcast_log_col = db["broadcast_log"]
 ratings_col = db["manga_ratings"]
 subscriptions_col = db["manga_subscriptions"]
+chapter_files_col = db["chapter_files"]
 
 
 # ==========================================
@@ -59,6 +60,8 @@ def init_db_indexes():
         ratings_col.create_index([("channel_id", ASCENDING), ("user_id", ASCENDING)], unique=True)
         subscriptions_col.create_index([("channel_id", ASCENDING), ("user_id", ASCENDING)], unique=True)
         subscriptions_col.create_index([("user_id", ASCENDING)])
+        chapter_files_col.create_index([("channel_id", ASCENDING), ("chapter", ASCENDING)], unique=True)
+        chapter_files_col.create_index([("channel_id", ASCENDING)])
         logger.info("✅ Database indexes initialized successfully.")
     except Exception as e:
         logger.warning(f"⚠️ Index initialization notice: {e}")
@@ -569,3 +572,50 @@ def get_manga_subscribers(channel_id: int) -> list[int]:
         )
     }
     return list(sub_uids | fav_uids)
+
+
+# ==========================================
+# 📖 In-App Web Reader Chapter Storage
+# ==========================================
+def save_chapter_file(channel_id: int, chapter: int, file_id: str, file_name: str = None, msg_id: int = 0):
+    """Indexes a chapter PDF file_id for online webtoon/manga reading."""
+    data = {
+        "channel_id": channel_id,
+        "chapter": int(chapter),
+        "file_id": file_id,
+        "file_name": file_name,
+        "msg_id": msg_id,
+        "updated_at": datetime.utcnow()
+    }
+    chapter_files_col.update_one(
+        {"channel_id": channel_id, "chapter": int(chapter)},
+        {"$set": data},
+        upsert=True
+    )
+    return True
+
+
+def get_chapter_file(channel_id: int, chapter: int):
+    """Retrieves file_id and info for a specific chapter."""
+    return chapter_files_col.find_one({"channel_id": channel_id, "chapter": int(chapter)})
+
+
+def get_manga_chapter_list(channel_id: int):
+    """Returns sorted list of available chapters for a manga."""
+    # First check chapter_files_col
+    files = list(chapter_files_col.find({"channel_id": channel_id}, {"chapter": 1, "_id": 0}))
+    if files:
+        chaps = sorted({f["chapter"] for f in files})
+        return chaps
+
+    # Fallback to posted_chapters_col
+    posted = posted_chapter_col.find_one({"channel_id": channel_id})
+    if posted and posted.get("chapters"):
+        return sorted([int(c) for c in posted["chapters"] if str(c).isdigit()])
+
+    # Fallback to total_chapters count
+    manga = get_manga_by_id(channel_id)
+    if manga and manga.get("total_chapters"):
+        return list(range(1, manga["total_chapters"] + 1))
+
+    return [1]

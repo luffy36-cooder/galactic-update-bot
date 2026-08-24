@@ -184,9 +184,14 @@ function createMangaCardHtml(item) {
       <div class="card-details">
         <h4 class="manga-title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
         <div class="card-actions">
-          <a href="${item.channel_link}" target="_blank" class="btn-read-channel">
-            <i class="fa-solid fa-book-open-reader"></i> Read Channel
-          </a>
+          <div class="btn-read-row">
+            <a href="/reader?cid=${item.channel_id}&ch=${item.bookmark_chapter || 1}&user_id=${currentUserId}" class="btn-read-online">
+              <i class="fa-solid fa-bolt"></i> Read Online
+            </a>
+            <a href="${item.channel_link}" target="_blank" class="btn-read-channel" title="Open Telegram Channel">
+              <i class="fa-brands fa-telegram"></i>
+            </a>
+          </div>
           <div class="status-actions-row">
             <button class="btn-icon-action ${isSub ? 'active-sub' : ''}" onclick="toggleSubscribe(${item.channel_id}, ${!isSub})" title="Auto Chapter Alert">
               <i class="${isSub ? 'fa-solid' : 'fa-regular'} fa-bell"></i>

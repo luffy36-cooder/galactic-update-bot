@@ -19,7 +19,9 @@ from database import (
     subscribe_manga,
     unsubscribe_manga,
     is_user_subscribed,
-    get_user_subscriptions
+    get_user_subscriptions,
+    get_chapter_file,
+    get_manga_chapter_list,
 )
 from profile_handler import get_rank_title
 
@@ -60,6 +62,11 @@ def register_web_routes(app, bot_getter=None):
     @app.route("/myprofile")
     def web_profile():
         return render_template("profile.html")
+
+    @app.route("/reader")
+    @app.route("/read")
+    def web_reader():
+        return render_template("reader.html")
 
     @app.route("/static/images/default_cover.svg")
     def default_cover():
@@ -365,3 +372,55 @@ def register_web_routes(app, bot_getter=None):
             "channel_id": channel_id,
             "subscribed": sub_action
         })
+
+    # -------------------------------------------------------------
+    # 📖 API: Get Manga Chapter List
+    # -------------------------------------------------------------
+    @app.route("/api/chapters/<int(signed=True):channel_id>", methods=["GET"])
+    def api_get_chapters(channel_id):
+        manga = get_manga_by_id(channel_id)
+        if not manga:
+            return jsonify({"success": False, "error": "Manga not found"}), 404
+
+        chapters = get_manga_chapter_list(channel_id)
+        return jsonify({
+            "success": True,
+            "channel_id": channel_id,
+            "name": manga.get("name", "Manga"),
+            "channel_link": manga.get("channel_link") or f"https://t.me/c/{str(channel_id)[4:]}/1",
+            "total_chapters": manga.get("total_chapters") or len(chapters),
+            "chapters": chapters
+        })
+
+    # -------------------------------------------------------------
+    # 📄 API: Stream Chapter PDF directly from Telegram CDN (0 Server Storage / RAM)
+    # -------------------------------------------------------------
+    @app.route("/api/chapter/file/<int(signed=True):channel_id>/<int:chapter>", methods=["GET"])
+    def api_get_chapter_file(channel_id, chapter):
+        chap_doc = get_chapter_file(channel_id, chapter)
+        manga = get_manga_by_id(channel_id) or {}
+        channel_link = manga.get("channel_link") or f"https://t.me/c/{str(channel_id)[4:]}/1"
+
+        if not chap_doc or not chap_doc.get("file_id"):
+            return jsonify({
+                "success": False,
+                "error": f"Chapter {chapter} PDF file not cached yet",
+                "channel_link": channel_link
+            }), 404
+
+        file_id = chap_doc["file_id"]
+        bot = bot_getter() if callable(bot_getter) else bot_getter
+        if bot:
+            try:
+                tg_file = bot.get_file(file_id)
+                if tg_file and tg_file.file_path:
+                    # Redirect client directly to Telegram's secure CDN stream
+                    return redirect(tg_file.file_path)
+            except Exception as e:
+                logger.error(f"Failed to fetch Telegram PDF file {file_id}: {e}")
+
+        return jsonify({
+            "success": False,
+            "error": "Failed to resolve file link from Telegram",
+            "channel_link": channel_link
+        }), 502

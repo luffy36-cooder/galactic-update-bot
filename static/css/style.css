@@ -351,13 +351,19 @@ body {
   gap: 6px;
 }
 
-.btn-read-channel {
+.btn-read-row {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.btn-read-online {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  width: 100%;
-  padding: 7px;
+  gap: 5px;
+  padding: 7px 8px;
   background: linear-gradient(135deg, var(--accent-purple), var(--accent-indigo));
   color: #fff;
   border-radius: var(--radius-sm);
@@ -367,9 +373,28 @@ body {
   transition: var(--transition);
 }
 
-.btn-read-channel:active {
+.btn-read-online:active {
   opacity: 0.9;
   transform: scale(0.97);
+}
+
+.btn-read-channel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
+  color: #38bdf8;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+.btn-read-channel:active {
+  background: rgba(56, 189, 248, 0.2);
+  transform: scale(0.95);
 }
 
 .status-actions-row {

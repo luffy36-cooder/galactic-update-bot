@@ -20,6 +20,7 @@ from database import (
     mark_chapter_posted,
     unmark_chapter_posted,
     get_manga_subscribers,
+    save_chapter_file,
 )
 
 logger = logging.getLogger(__name__)
@@ -235,6 +236,9 @@ def handle_channel_post(update: Update, context: CallbackContext):
     image = manga_info.get("image")
     invite_link = manga_info.get("channel_link") or f"https://t.me/c/{str(channel_id)[4:]}/1"
     post_link = build_post_link(channel_id, message.message_id, invite_link)
+
+    # Save chapter PDF file reference for Web Reader
+    save_chapter_file(channel_id, chapter, doc.file_id, doc.file_name, message.message_id)
 
     # Buffer the chapter release: (chapter_num, msg_id, image, invite_link, post_link)
     channel_buffers[channel_id].append((chapter, message.message_id, image, invite_link, post_link))

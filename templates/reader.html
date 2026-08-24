@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Manga Galactic — In-App Web Reader</title>
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- Mozilla PDF.js Engine -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <!-- Google Fonts & FontAwesome -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/reader.css">
+</head>
+<body class="reader-body">
+
+  <!-- Top Floating Reader Toolbar -->
+  <header class="reader-navbar" id="readerNavbar">
+    <div class="reader-nav-left">
+      <a href="/web" class="btn-nav-round" id="btnBackToCatalog" title="Back to Catalog">
+        <i class="fa-solid fa-arrow-left"></i>
+      </a>
+      <div class="reader-meta">
+        <h2 id="readerMangaTitle" class="manga-nav-title">Loading Manga...</h2>
+        <div class="chapter-selector-wrap">
+          <select id="chapterSelect" class="chapter-dropdown">
+            <option value="1">Chapter 1</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="reader-nav-right">
+      <button class="btn-nav-round active" id="btnModeWebtoon" title="Webtoon Vertical Scroll">
+        <i class="fa-solid fa-scroll"></i>
+      </button>
+      <button class="btn-nav-round" id="btnModePage" title="Page-by-Page Flip">
+        <i class="fa-solid fa-book-open"></i>
+      </button>
+      <button class="btn-nav-round" id="btnFullscreen" title="Fullscreen Mode">
+        <i class="fa-solid fa-expand"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Reader Main Viewport -->
+  <main class="reader-viewport" id="readerViewport">
+    <!-- Loading Screen -->
+    <div id="readerLoader" class="reader-loader">
+      <div class="loader-spinner"></div>
+      <p id="loaderStatusText">Fetching chapter stream from Telegram CDN...</p>
+      <div class="loader-progress-bar"><div class="progress-fill" id="loadProgress"></div></div>
+    </div>
+
+    <!-- Error / Fallback Card -->
+    <div id="readerErrorState" class="reader-error-card" style="display:none;">
+      <i class="fa-solid fa-circle-exclamation error-icon"></i>
+      <h3>Chapter Stream Unavailable</h3>
+      <p id="readerErrorMsg">This chapter's PDF is stored directly in the channel.</p>
+      <a href="#" id="errorChannelLink" target="_blank" class="btn btn-primary" style="margin-top: 14px;">
+        <i class="fa-solid fa-telegram"></i> Open & Read in Telegram Channel
+      </a>
+    </div>
+
+    <!-- Webtoon Mode Continuous Canvas Container -->
+    <div id="webtoonContainer" class="webtoon-scroll-view"></div>
+
+    <!-- Page Flip Mode Viewport -->
+    <div id="pageFlipContainer" class="page-flip-view" style="display:none;">
+      <div class="page-canvas-wrap">
+        <canvas id="flipCanvas"></canvas>
+      </div>
+      <!-- Left & Right Touch Tap Zones -->
+      <div class="tap-zone tap-left" id="tapLeft"></div>
+      <div class="tap-zone tap-right" id="tapRight"></div>
+    </div>
+  </main>
+
+  <!-- Bottom Floating Navigation Bar -->
+  <footer class="reader-footer" id="readerFooter">
+    <button class="btn-footer-nav" id="btnPrevChapter">
+      <i class="fa-solid fa-backward-step"></i> Prev
+    </button>
+    
+    <div class="page-counter-badge">
+      <span id="pageIndicator">Page 1 / 1</span>
+    </div>
+
+    <button class="btn-footer-bookmark" id="btnQuickBookmark">
+      <i class="fa-solid fa-bookmark"></i> Bookmark
+    </button>
+
+    <button class="btn-footer-nav" id="btnNextChapter">
+      Next <i class="fa-solid fa-forward-step"></i>
+    </button>
+  </footer>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Scripts -->
+  <script src="/static/js/reader.js"></script>
+</body>
+</html>
