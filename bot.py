@@ -1,3 +1,15 @@
+import sys
+import types
+
+# 🛠️ Python 3.12 / 3.13 pkg_resources compatibility shim for APScheduler
+try:
+    import pkg_resources
+except ImportError:
+    pr = types.ModuleType("pkg_resources")
+    pr.get_distribution = lambda name: types.SimpleNamespace(version="3.6.3")
+    pr.DistributionNotFound = Exception
+    sys.modules["pkg_resources"] = pr
+
 import logging
 import threading
 import time
