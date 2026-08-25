@@ -443,8 +443,9 @@ def uu_cmd(update: Update, context: CallbackContext):
 
 
 def send_users_page(update, context: CallbackContext, page: int):
-    from database import get_all_bot_user_ids, users_col, save_bot_user
+    from database import get_all_bot_user_ids, users_col, save_bot_user, ratings_col
     from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+    import threading
 
     all_uids = get_all_bot_user_ids()
     total_users = len(all_uids)
@@ -463,6 +464,11 @@ def send_users_page(update, context: CallbackContext, page: int):
     end_idx = start_idx + UU_PAGE_SIZE
     page_uids = all_uids[start_idx:end_idx]
 
+    # Batch-fetch DB documents in a single query (<5ms)
+    users_map = {d["user_id"]: d for d in users_col.find({"user_id": {"$in": page_uids}})}
+    ratings_map = {d["user_id"]: d.get("user_name") for d in ratings_col.find({"user_id": {"$in": page_uids}, "user_name": {"$ne": None}})}
+
+    missing_uids = []
     text = (
         f"👥 <b>Galactic Bot Users Directory</b> 🌌\n"
         f"📄 <b>Page {page + 1} of {total_pages}</b> | Total Users: <b>{total_users}</b>\n"
@@ -470,26 +476,18 @@ def send_users_page(update, context: CallbackContext, page: int):
     )
 
     for idx, uid in enumerate(page_uids, start=start_idx + 1):
-        doc = users_col.find_one({"user_id": uid})
-        name = "User"
+        doc = users_map.get(uid)
+        name = None
         username = None
 
         if doc:
             name = doc.get("full_name") or doc.get("first_name") or "User"
             username = doc.get("username")
+        elif uid in ratings_map:
+            name = ratings_map[uid]
         else:
-            r_doc = ratings_col.find_one({"user_id": uid})
-            if r_doc and r_doc.get("user_name"):
-                name = r_doc["user_name"]
-            else:
-                try:
-                    chat = context.bot.get_chat(uid)
-                    if chat:
-                        name = chat.full_name or chat.first_name or "User"
-                        username = chat.username
-                        save_bot_user(uid, chat.first_name, chat.last_name, chat.username)
-                except Exception:
-                    name = f"User {uid}"
+            name = f"User {uid}"
+            missing_uids.append(uid)
 
         uname_str = f"@{username}" if username else "<i>No Username</i>"
         safe_name = html.escape(str(name))
@@ -500,6 +498,19 @@ def send_users_page(update, context: CallbackContext, page: int):
         )
 
     text += "─────────────────────────"
+
+    # Background resolver for missing profiles (doesn't block response)
+    if missing_uids:
+        def bg_resolve(uids_to_resolve, bot):
+            for u in uids_to_resolve:
+                try:
+                    time.sleep(0.05)
+                    c = bot.get_chat(u)
+                    if c:
+                        save_bot_user(u, c.first_name, c.last_name, c.username)
+                except Exception:
+                    pass
+        threading.Thread(target=bg_resolve, args=(missing_uids, context.bot), daemon=True).start()
 
     # Pagination buttons
     nav_row = []
