@@ -98,19 +98,21 @@ def myhub_cmd(update: Update, context: CallbackContext):
     import html
     from telegram import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
     from config import WEB_APP_URL
-    from database import get_user_bookmarks, get_user_badges
+    from database import get_user_bookmarks, get_user_badges, get_user_subscriptions
 
     user = update.effective_user
     user_id = user.id
     lists = get_user_manga_lists(user_id)
     bookmarks = get_user_bookmarks(user_id)
     badges = get_user_badges(user_id)
+    subs = get_user_subscriptions(user_id)
 
     read_count = len(lists.get("read", []))
     fav_count = len(lists.get("favorite", []))
     comp_count = len(lists.get("completed", []))
     hold_count = len(lists.get("hold", []))
     drop_count = len(lists.get("dropped", []))
+    sub_count = len(subs)
     bm_count = len(bookmarks)
     badge_str = " ".join(badges) if badges else "🎖️ Explorer"
 
@@ -119,6 +121,7 @@ def myhub_cmd(update: Update, context: CallbackContext):
         f"👤 <b>Reader:</b> {html.escape(user.full_name)}\n"
         f"🏅 <b>Badges:</b> {badge_str}\n\n"
         f"📊 <b>Your Reading Shelves:</b>\n"
+        f"• 🔔 Subscribed Alerts: <b>{sub_count}</b> titles\n"
         f"• 📖 Read: <b>{read_count}</b> titles\n"
         f"• ❤️ Favorites: <b>{fav_count}</b> titles\n"
         f"• 🏁 Completed: <b>{comp_count}</b> titles\n"
@@ -130,6 +133,10 @@ def myhub_cmd(update: Update, context: CallbackContext):
 
     keyboard = InlineKeyboardMarkup([
         [
+            InlineKeyboardButton(f"🔔 Subscriptions ({sub_count})", callback_data=f"hub_shelf:subscribed:{user_id}"),
+            InlineKeyboardButton(f"📌 Bookmarks ({bm_count})", callback_data="bm_list_0")
+        ],
+        [
             InlineKeyboardButton(f"📖 Read ({read_count})", callback_data=f"hub_shelf:read:{user_id}"),
             InlineKeyboardButton(f"❤️ Favorites ({fav_count})", callback_data=f"hub_shelf:favorite:{user_id}")
         ],
@@ -139,11 +146,10 @@ def myhub_cmd(update: Update, context: CallbackContext):
         ],
         [
             InlineKeyboardButton(f"👋 Dropped ({drop_count})", callback_data=f"hub_shelf:dropped:{user_id}"),
-            InlineKeyboardButton(f"📌 Bookmarks ({bm_count})", callback_data="bm_list_0")
+            InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/profile?user_id={user_id}"))
         ],
         [
-            InlineKeyboardButton("👤 Visual Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/profile?user_id={user_id}")),
-            InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat="")
+            InlineKeyboardButton("🔍 Search Manga (Inline)", switch_inline_query_current_chat="")
         ]
     ])
 

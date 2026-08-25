@@ -14,6 +14,7 @@ from database import (
     get_user_manga_status,
     get_user_manga_lists,
     get_user_bookmarks,
+    get_user_subscriptions,
     get_manga_by_id,
     get_manga_rating_summary
 )
@@ -52,15 +53,31 @@ def inline_query(update, context):
         # 🛸 1. PERSONAL READING HUB (hub, myhub, me, shelves, read, fav)
         # =========================================================
         q_lower = query_text.lower()
-        if q_lower in ["hub", "myhub", "me", "shelves", "shelf", "list", "fav", "read", "bookmarks", "bookmark"]:
+        if q_lower in ["hub", "myhub", "me", "shelves", "shelf", "list", "fav", "read", "bookmarks", "bookmark", "sub", "subs", "subscribed"]:
             lists = get_user_manga_lists(user_id)
             bookmarks = get_user_bookmarks(user_id)
+            sub_ids = get_user_subscriptions(user_id)
 
             read_ids = lists.get("read", [])
             fav_ids = lists.get("favorite", [])
             comp_ids = lists.get("completed", [])
             hold_ids = lists.get("hold", [])
             drop_ids = lists.get("dropped", [])
+
+            # Shelf 0: Subscriptions (New Chapter Alerts)
+            results.append(
+                InlineQueryResultArticle(
+                    id="hub_subs",
+                    title=f"🔔 Subscribed Alerts ({len(sub_ids)} titles)",
+                    description="Manga you receive new chapter notifications for",
+                    thumbnail_url="https://img.icons8.com/color/96/bell--v1.png",
+                    input_message_content=InputTextMessageContent(
+                        _format_shelf_text("Subscribed Alerts", "🔔", sub_ids),
+                        parse_mode="HTML",
+                        disable_web_page_preview=True
+                    )
+                )
+            )
 
             # Shelf 1: Read List
             results.append(

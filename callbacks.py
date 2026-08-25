@@ -109,6 +109,7 @@ def handle_status_buttons(update: Update, context: CallbackContext):
 
                 lists = get_user_manga_lists(user_id)
                 shelf_map = {
+                    "subscribed": ("Subscribed Channel Alerts", "🔔"),
                     "read": ("Read Shelf", "📖"),
                     "favorite": ("Favorites", "❤️"),
                     "completed": ("Completed List", "🏁"),
@@ -116,7 +117,11 @@ def handle_status_buttons(update: Update, context: CallbackContext):
                     "dropped": ("Dropped Shelf", "👋")
                 }
                 name, emoji = shelf_map.get(shelf, ("Shelf", "📚"))
-                items = lists.get(shelf, [])
+                if shelf == "subscribed":
+                    from database import get_user_subscriptions
+                    items = get_user_subscriptions(user_id)
+                else:
+                    items = lists.get(shelf, [])
 
                 text = f"{emoji} <b>Your {name} ({len(items)}):</b>\n\n{format_manga_list(items)}"
                 kb = InlineKeyboardMarkup([
@@ -131,15 +136,18 @@ def handle_status_buttons(update: Update, context: CallbackContext):
     # 1c. Handle Return to Hub (hub_back:<target_id>)
     if data.startswith("hub_back:"):
         try:
+            from database import get_user_subscriptions
             lists = get_user_manga_lists(user_id)
             bookmarks = get_user_bookmarks(user_id)
             badges = get_user_badges(user_id)
+            subs = get_user_subscriptions(user_id)
 
             read_count = len(lists.get("read", []))
             fav_count = len(lists.get("favorite", []))
             comp_count = len(lists.get("completed", []))
             hold_count = len(lists.get("hold", []))
             drop_count = len(lists.get("dropped", []))
+            sub_count = len(subs)
             bm_count = len(bookmarks)
             badge_str = " ".join(badges) if badges else "🎖️ Explorer"
 
@@ -148,6 +156,7 @@ def handle_status_buttons(update: Update, context: CallbackContext):
                 f"👤 <b>Reader:</b> {html.escape(user_name)}\n"
                 f"🏅 <b>Badges:</b> {badge_str}\n\n"
                 f"📊 <b>Your Reading Shelves:</b>\n"
+                f"• 🔔 Subscribed Alerts: <b>{sub_count}</b> titles\n"
                 f"• 📖 Read: <b>{read_count}</b> titles\n"
                 f"• ❤️ Favorites: <b>{fav_count}</b> titles\n"
                 f"• 🏁 Completed: <b>{comp_count}</b> titles\n"
@@ -159,6 +168,10 @@ def handle_status_buttons(update: Update, context: CallbackContext):
 
             keyboard = InlineKeyboardMarkup([
                 [
+                    InlineKeyboardButton(f"🔔 Subscriptions ({sub_count})", callback_data=f"hub_shelf:subscribed:{user_id}"),
+                    InlineKeyboardButton(f"📌 Bookmarks ({bm_count})", callback_data="bm_list_0")
+                ],
+                [
                     InlineKeyboardButton(f"📖 Read ({read_count})", callback_data=f"hub_shelf:read:{user_id}"),
                     InlineKeyboardButton(f"❤️ Favorites ({fav_count})", callback_data=f"hub_shelf:favorite:{user_id}")
                 ],
@@ -168,11 +181,10 @@ def handle_status_buttons(update: Update, context: CallbackContext):
                 ],
                 [
                     InlineKeyboardButton(f"👋 Dropped ({drop_count})", callback_data=f"hub_shelf:dropped:{user_id}"),
-                    InlineKeyboardButton(f"📌 Bookmarks ({bm_count})", callback_data="bm_list_0")
+                    InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/profile?user_id={user_id}"))
                 ],
                 [
-                    InlineKeyboardButton("👤 Visual Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/profile?user_id={user_id}")),
-                    InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat="")
+                    InlineKeyboardButton("🔍 Search Manga (Inline)", switch_inline_query_current_chat="")
                 ]
             ])
             _safe_edit_or_reply(query, text, reply_markup=keyboard, disable_web_page_preview=True)
