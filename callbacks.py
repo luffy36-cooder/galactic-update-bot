@@ -45,6 +45,24 @@ def format_manga_list(channel_ids):
     return "\n".join(lines)
 
 
+def _safe_edit_or_reply(query, text, reply_markup=None, disable_web_page_preview=True):
+    """Safely edits text or caption for photos, or sends new message on failure."""
+    try:
+        if query.message and query.message.photo:
+            try:
+                query.edit_message_caption(caption=text, parse_mode="HTML", reply_markup=reply_markup)
+            except Exception:
+                query.message.reply_text(text, parse_mode="HTML", reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+        elif query.message:
+            query.edit_message_text(text, parse_mode="HTML", reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+    except Exception as e:
+        logger.warning(f"Failed to edit message, sending reply: {e}")
+        try:
+            query.message.reply_text(text, parse_mode="HTML", reply_markup=reply_markup, disable_web_page_preview=disable_web_page_preview)
+        except Exception:
+            pass
+
+
 # 🌟 Main inline callback button handler
 def handle_status_buttons(update: Update, context: CallbackContext):
     from manga_search import _send_single_manga
@@ -104,7 +122,7 @@ def handle_status_buttons(update: Update, context: CallbackContext):
                 kb = InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔙 Back to Hub", callback_data=f"hub_back:{user_id}")]
                 ])
-                query.edit_message_text(text, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True)
+                _safe_edit_or_reply(query, text, reply_markup=kb, disable_web_page_preview=True)
                 query.answer()
         except Exception as e:
             logger.error(f"Error handling hub_shelf: {e}")
@@ -157,7 +175,7 @@ def handle_status_buttons(update: Update, context: CallbackContext):
                     InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat="")
                 ]
             ])
-            query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+            _safe_edit_or_reply(query, text, reply_markup=keyboard, disable_web_page_preview=True)
             query.answer()
         except Exception as e:
             logger.error(f"Error handling hub_back: {e}")
