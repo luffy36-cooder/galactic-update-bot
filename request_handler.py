@@ -5,11 +5,11 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from rapidfuzz import process, fuzz
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext
 
 from database import is_sudo, get_all_sudo, request_col, get_all_manga_cached
-from config import LOG_CHANNEL_ID, BOT_OWNER_ID, WEB_APP_URL
+from config import LOG_CHANNEL_ID, BOT_OWNER_ID
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +37,46 @@ def log_to_channel(context: CallbackContext, text: str):
         logger.warning(f"[LOG ERROR] {e}")
 
 
+def _sync_admin_messages(context: CallbackContext, req_doc: dict, acting_admin, action_summary: str):
+    """Synchronously edits and removes action buttons from all other admins' alert messages."""
+    if not req_doc:
+        return
+    admin_msgs = req_doc.get("admin_messages") or {}
+    m_name = req_doc.get("manga_name", "Manga")
+    target_uid = req_doc.get("user_id", "")
+    admin_name = html.escape(acting_admin.first_name or "Admin")
+
+    sync_text = (
+        f"📨 <b>Manga Request Resolved</b> 🌌\n\n"
+        f"📚 <b>Manga:</b> <code>{html.escape(m_name)}</code>\n"
+        f"🆔 <b>User ID:</b> <code>{target_uid}</code>\n\n"
+        f"✨ <b>Status:</b> {action_summary} by <b>{admin_name}</b>"
+    )
+
+    for aid_str, mid in admin_msgs.items():
+        if int(aid_str) == acting_admin.id:
+            continue
+        try:
+            context.bot.edit_message_text(
+                chat_id=int(aid_str),
+                message_id=mid,
+                text=sync_text,
+                parse_mode="HTML",
+                reply_markup=None
+            )
+        except Exception:
+            pass
+
+
 # =========================================================
 # 📨 Main Request Command & Text Handler
-# Supports: /request <manga>, #request <manga>, request <manga>
+# Strictly requires: /request, #request, or request (case-insensitive)
 # =========================================================
 def request_manga(update: Update, context: CallbackContext):
     if not update.message:
         return
 
-    # Check if admin is currently replying to a user's request
+    # Check if admin is currently replying with a custom note to a user
     if handle_admin_reply_text(update, context):
         return
 
@@ -54,26 +85,35 @@ def request_manga(update: Update, context: CallbackContext):
     if not text:
         return
 
-    # Extract query from /request, #request, or 'request <name>'
+    # Extract query strictly from /request, #request, or 'request <name>' (Case-Insensitive)
+    text_lower = text.lower()
     query = ""
-    if text.startswith("/request"):
-        query = text.split(' ', 1)[1].strip() if ' ' in text else ""
-    elif text.lower().startswith("#request"):
+    if text_lower.startswith("/request"):
+        query = text[len("/request"):].strip()
+    elif text_lower.startswith("#request"):
         query = text[len("#request"):].strip()
-    elif text.lower().startswith("request "):
-        query = text[len("request "):].strip()
-    elif update.effective_chat.type == "private" and not text.startswith("/"):
-        # In private chat, any standalone text is treated as a request
-        query = text
+    elif text_lower.startswith("request"):
+        remainder = text[len("request"):].strip()
+        if remainder.startswith(":") or remainder.startswith("-"):
+            remainder = remainder[1:].strip()
+        query = remainder
     else:
+        # Not a request command - ignore random conversation messages
         return
 
     if not query or not is_valid_manga_name(query):
-        update.message.reply_text("⚠️ Please provide a valid manga or manhwa name.\n\n📌 <b>Usage:</b> <code>/request <manga name></code>", parse_mode="HTML")
+        update.message.reply_text(
+            "⚠️ <b>Please specify the manga or manhwa title!</b>\n\n"
+            "📌 <b>Usage:</b>\n"
+            "• <code>/request &lt;manga name&gt;</code>\n"
+            "• <code>#request &lt;manga name&gt;</code>\n"
+            "• <code>request &lt;manga name&gt;</code>",
+            parse_mode="HTML"
+        )
         return
 
     if len(query) > 120:
-        update.message.reply_text("⚠️ Manga name too long. Please keep it under 120 characters.")
+        update.message.reply_text("⚠️ Manga name is too long. Please keep it under 120 characters.")
         return
 
     # 1. 🔒 Verify user has started the bot in PM (Can receive bot DMs)
@@ -89,8 +129,8 @@ def request_manga(update: Update, context: CallbackContext):
         start_url = f"https://t.me/{bot_username}?start=req"
         btn = InlineKeyboardMarkup([[InlineKeyboardButton("🚀 Start Bot in Private", url=start_url)]])
         update.message.reply_text(
-            f"❌ <b>Please start the bot first!</b>\n\n"
-            f"Hey {user.mention_html()}, you must start the bot in private first so we can notify you via DM when your requested manga is uploaded!",
+            f"❌ <b>Please start the bot in private first!</b>\n\n"
+            f"Hey {user.mention_html()}, you must start the bot in private first so we can DM you when your requested manga is uploaded!",
             reply_markup=btn,
             parse_mode="HTML"
         )
@@ -131,7 +171,7 @@ def request_manga(update: Update, context: CallbackContext):
     if existing:
         update.message.reply_text(
             f"📌 <b>Already in Queue!</b>\n\n"
-            f"📚 <b>{html.escape(query)}</b> has already been requested by a community member and is currently pending admin review! 🕒",
+            f"📚 <b>{html.escape(query)}</b> has already been requested and is pending admin review! 🕒",
             parse_mode="HTML"
         )
         return
@@ -144,7 +184,8 @@ def request_manga(update: Update, context: CallbackContext):
         "user_handle": f"@{user.username}" if user.username else "No handle",
         "manga_name": query,
         "status": "pending",
-        "timestamp": now_utc
+        "timestamp": now_utc,
+        "admin_messages": {}
     })
     req_id = str(res.inserted_id)
 
@@ -175,17 +216,20 @@ def request_manga(update: Update, context: CallbackContext):
     ])
 
     admin_ids = set([BOT_OWNER_ID] + get_all_sudo())
+    admin_msg_ids = {}
     for aid in admin_ids:
         try:
-            context.bot.send_message(
+            sent_msg = context.bot.send_message(
                 chat_id=aid,
                 text=admin_text,
                 parse_mode="HTML",
                 reply_markup=admin_keyboard
             )
+            admin_msg_ids[str(aid)] = sent_msg.message_id
         except Exception:
             pass
 
+    request_col.update_one({"_id": res.inserted_id}, {"$set": {"admin_messages": admin_msg_ids}})
     log_to_channel(context, admin_text)
 
 
@@ -260,7 +304,6 @@ def handle_request_callbacks(update: Update, context: CallbackContext):
 
         manga_name = req_doc.get("manga_name", "Manga")
 
-        # Present options: Quick Instant Accept or Accept with Custom Message
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("✨ Quick Accept DM", callback_data=f"req_sendacc|{req_id_str}|{target_user_id}"),
@@ -285,7 +328,8 @@ def handle_request_callbacks(update: Update, context: CallbackContext):
         req_doc = request_col.find_one({"_id": req_id})
         manga_name = req_doc.get("manga_name", "Manga") if req_doc else "Manga"
 
-        request_col.update_one({"_id": req_id}, {"$set": {"status": "completed", "completed_by": admin_user.id}})
+        request_col.update_one({"_id": req_id}, {"$set": {"status": "completed", "completed_by": admin_user.id, "completed_by_name": admin_user.first_name}})
+        _sync_admin_messages(context, req_doc, admin_user, "✅ <b>Accepted</b>")
 
         try:
             context.bot.send_message(
@@ -341,19 +385,21 @@ def handle_request_callbacks(update: Update, context: CallbackContext):
         req_doc = request_col.find_one({"_id": req_id})
         manga_name = req_doc.get("manga_name", "Manga") if req_doc else "Manga"
 
-        request_col.update_one({"_id": req_id}, {"$set": {"status": "denied", "denied_by": admin_user.id, "reason": reason_text}})
+        request_col.update_one({"_id": req_id}, {"$set": {"status": "denied", "denied_by": admin_user.id, "denied_by_name": admin_user.first_name, "reason": reason_text}})
+        _sync_admin_messages(context, req_doc, admin_user, "❌ <b>Declined</b>")
 
         try:
             context.bot.send_message(
                 chat_id=target_user_id,
                 text=(
-                    f"⚠️ <b>Manga Request Update</b>\n\n"
-                    f"📚 <b>{html.escape(manga_name)}</b> could not be uploaded.\n"
-                    f"💬 <b>Reason:</b> {html.escape(reason_text)}"
+                    f"❌ <b>Your Manga Request was Declined</b>\n\n"
+                    f"📚 <b>Manga:</b> {html.escape(manga_name)}\n"
+                    f"💬 <b>Reason:</b> {html.escape(reason_text)}\n\n"
+                    f"<i>Feel free to request another title anytime! 💕</i>"
                 ),
                 parse_mode="HTML"
             )
-            query.edit_message_text(f"❌ <b>Declined!</b> User notified with reason: <i>{reason_text}</i>", parse_mode="HTML")
+            query.edit_message_text(f"❌ <b>Declined!</b> User notified with reason:\n<i>{reason_text}</i>", parse_mode="HTML")
         except Exception as e:
             query.edit_message_text(f"❌ Marked declined (could not DM user: {e})")
 
@@ -385,11 +431,11 @@ def handle_admin_reply_text(update: Update, context: CallbackContext) -> bool:
     if not update.message or not update.message.text:
         return False
 
-    admin_id = update.effective_user.id
-    if admin_id not in waiting_admin_reply:
+    admin_user = update.effective_user
+    if admin_user.id not in waiting_admin_reply:
         return False
 
-    state = waiting_admin_reply.pop(admin_id)
+    state = waiting_admin_reply.pop(admin_user.id)
     text = update.message.text.strip()
 
     if text.lower() == "/cancel":
@@ -405,7 +451,8 @@ def handle_admin_reply_text(update: Update, context: CallbackContext) -> bool:
 
     try:
         if action == "req_customacc":
-            request_col.update_one({"_id": ObjectId(req_id_str)}, {"$set": {"status": "completed", "completed_by": admin_id, "admin_note": text}})
+            request_col.update_one({"_id": ObjectId(req_id_str)}, {"$set": {"status": "completed", "completed_by": admin_user.id, "completed_by_name": admin_user.first_name, "admin_note": text}})
+            _sync_admin_messages(context, req_doc, admin_user, "✅ <b>Accepted (Custom Note)</b>")
             dm_text = (
                 f"🎉 <b>Your Manga Request Was Accepted!</b> 🌌\n\n"
                 f"📚 <b>{html.escape(m_name)}</b>\n"
@@ -413,11 +460,13 @@ def handle_admin_reply_text(update: Update, context: CallbackContext) -> bool:
                 f"<i>Happy reading! 💕</i>"
             )
         elif action == "req_customdec":
-            request_col.update_one({"_id": ObjectId(req_id_str)}, {"$set": {"status": "denied", "denied_by": admin_id, "reason": text}})
+            request_col.update_one({"_id": ObjectId(req_id_str)}, {"$set": {"status": "denied", "denied_by": admin_user.id, "denied_by_name": admin_user.first_name, "reason": text}})
+            _sync_admin_messages(context, req_doc, admin_user, "❌ <b>Declined</b>")
             dm_text = (
-                f"⚠️ <b>Manga Request Update</b>\n\n"
+                f"❌ <b>Your Manga Request was Declined</b>\n\n"
                 f"📚 <b>{html.escape(m_name)}</b>\n"
-                f"💬 <b>Reason:</b> {html.escape(text)}"
+                f"💬 <b>Reason:</b> {html.escape(text)}\n\n"
+                f"<i>Feel free to request another title anytime! 💕</i>"
             )
         else:  # Direct message
             dm_text = (
@@ -455,3 +504,4 @@ def replyreq_cmd(update: Update, context: CallbackContext):
         update.message.reply_text(f"✅ Message sent to <code>{target_uid}</code>!", parse_mode="HTML")
     except Exception as e:
         update.message.reply_text(f"❌ Failed to send message: {e}")
+
