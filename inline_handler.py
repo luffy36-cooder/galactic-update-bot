@@ -163,7 +163,13 @@ def inline_query(update, context):
                 )
             )
 
-            update.inline_query.answer(results, cache_time=3, is_personal=True)
+            update.inline_query.answer(
+                results,
+                cache_time=1,
+                is_personal=True,
+                switch_pm_text="🔍 Search All 125+ Manga",
+                switch_pm_parameter="search"
+            )
             return
 
         # =========================================================
@@ -237,11 +243,17 @@ def inline_query(update, context):
                 )
             )
 
-        update.inline_query.answer(results, cache_time=5, is_personal=True)
+        update.inline_query.answer(
+            results,
+            cache_time=1,
+            is_personal=True,
+            switch_pm_text="🛸 Open My Personal Hub",
+            switch_pm_parameter="hub"
+        )
     except Exception as e:
         logger.error(f"[INLINE ERROR] {e}", exc_info=True)
         try:
-            update.inline_query.answer([], cache_time=2)
+            update.inline_query.answer([], cache_time=1)
         except Exception:
             pass
 

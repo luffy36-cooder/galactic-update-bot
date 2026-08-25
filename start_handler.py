@@ -29,6 +29,18 @@ def log_to_channel(context: CallbackContext, text: str):
 
 # /start command
 def start_cmd(update: Update, context: CallbackContext):
+    if context.args:
+        arg = context.args[0].lower()
+        if arg in ["hub", "myhub"]:
+            from user_lists_handler import myhub_cmd
+            return myhub_cmd(update, context)
+        elif arg == "web":
+            from web_handlers import web_cmd
+            return web_cmd(update, context)
+        elif arg == "webprofile":
+            from web_handlers import webprofile_cmd
+            return webprofile_cmd(update, context)
+
     user = update.effective_user.first_name or "Senpai"
     user_id = update.effective_user.id
     bot_username = context.bot.username or "Galactic_Update_bot"
