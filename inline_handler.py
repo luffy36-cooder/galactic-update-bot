@@ -74,6 +74,10 @@ def inline_query(update, context):
         return
 
     query_text = (update.inline_query.query or "").strip()
+    raw_offset = update.inline_query.offset or ""
+    offset = int(raw_offset) if raw_offset.isdigit() else 0
+    PAGE_SIZE = 50
+
     user = update.inline_query.from_user
     user_id = user.id
     user_name = user.full_name or "Reader"
@@ -82,30 +86,95 @@ def inline_query(update, context):
 
     try:
         q_lower = query_text.lower()
+        is_bookmark_query = q_lower in ["bm", "bookmark", "bookmarks", "mybookmarks", "reading", "continue"]
         is_hub_query = q_lower in [
             "hub", "myhub", "webhub", "web_hub", "web", "catalog", "me", "shelves", "shelf", "list",
             "fav", "favorite", "favorites", "read", "completed",
-            "hold", "drop", "dropped", "bookmarks", "bookmark",
+            "hold", "drop", "dropped",
             "sub", "subs", "subscribed", "subscription", "subscriptions"
         ]
 
-        # Fetch user lists & ratings in single fast calls (cached)
+        # Fast in-memory cached lookups (<1ms)
         lists = get_user_manga_lists(user_id)
         bookmarks = get_user_bookmarks(user_id)
         sub_ids = get_user_subscriptions(user_id)
         badges = get_user_badges(user_id)
         all_ratings = get_all_ratings_cached()
 
-        # Build in-memory user shelf lookup: channel_id -> [statuses]
         user_shelf_map = {}
         for stat_name, cids in lists.items():
             for cid in cids:
                 user_shelf_map.setdefault(cid, []).append(stat_name)
 
-        # =========================================================
-        # 🛸 1. PERSONAL READING HUB & WEB HUB CARDS
-        # =========================================================
-        if is_hub_query or not query_text:
+        # -------------------------------------------------------------
+        # 📌 1. BOOKMARK SEARCH (When user types "bm" or "bookmark")
+        # -------------------------------------------------------------
+        if is_bookmark_query:
+            if not bookmarks:
+                results.append(
+                    InlineQueryResultArticle(
+                        id="no_bookmarks_found",
+                        title="📌 No Active Bookmarks",
+                        description="You haven't saved any chapters yet! Use /bookmark <name> <ch> in bot.",
+                        thumbnail_url="https://img.icons8.com/color/96/bookmark-ribbon.png",
+                        input_message_content=InputTextMessageContent(
+                            "📌 <b>No bookmarks found!</b>\n\nSave your reading progress using <code>/bookmark &lt;name&gt; &lt;ch&gt;</code> or tap <b>Bookmark</b> inside the Web Reader.",
+                            parse_mode="HTML"
+                        )
+                    )
+                )
+            else:
+                for b in bookmarks:
+                    b_manga_name = b.get("manga") or b.get("name", "Unknown")
+                    b_ch = b.get("chapter", 1)
+                    b_cid = b.get("channel_id")
+                    b_link = b.get("post_link") or (f"https://t.me/c/{str(b_cid)[4:]}/1" if b_cid else "https://t.me")
+                    reader_url = f"https://t.me/{bot_username}?start=read_{b_cid}_{b_ch}" if b_cid else f"{WEB_APP_URL}/reader"
+
+                    bm_kb = InlineKeyboardMarkup([
+                        [
+                            InlineKeyboardButton(f"📖 Continue Ch. {b_ch}", url=reader_url),
+                            InlineKeyboardButton("Channel Post", url=b_link)
+                        ],
+                        [
+                            InlineKeyboardButton("🛸 My Web Hub", url=f"https://t.me/{bot_username}?start=webhub")
+                        ]
+                    ])
+
+                    caption = (
+                        f"📌 <b>{html.escape(b_manga_name)}</b> — <b>Chapter {b_ch}</b>\n\n"
+                        f"<i>Saved bookmark for {html.escape(user_name)}. Tap below to continue reading!</i>"
+                    )
+
+                    thumb = f"{WEB_APP_URL}/api/image/{b_cid}" if b_cid else "https://img.icons8.com/color/96/bookmark-ribbon.png"
+                    results.append(
+                        InlineQueryResultArticle(
+                            id=f"bm_{b_cid}_{b_ch}",
+                            title=f"📌 {b_manga_name} — Ch. {b_ch}",
+                            description=f"Continue reading from Chapter {b_ch}",
+                            thumbnail_url=thumb,
+                            input_message_content=InputTextMessageContent(
+                                caption,
+                                parse_mode="HTML",
+                                disable_web_page_preview=False
+                            ),
+                            reply_markup=bm_kb
+                        )
+                    )
+
+            update.inline_query.answer(
+                results,
+                cache_time=1,
+                is_personal=True,
+                switch_pm_text="📌 Manage Bookmarks in Hub",
+                switch_pm_parameter="mybookmarks"
+            )
+            return
+
+        # -------------------------------------------------------------
+        # 🛸 2. PERSONAL READING HUB & SHELVES (When user types "hub" or "myhub")
+        # -------------------------------------------------------------
+        if is_hub_query:
             read_ids = lists.get("read", [])
             fav_ids = lists.get("favorite", [])
             comp_ids = lists.get("completed", [])
@@ -199,92 +268,57 @@ def inline_query(update, context):
                 )
             )
 
-            # Shelf: Read List
-            results.append(
-                InlineQueryResultArticle(
-                    id="hub_read",
-                    title=f"📖 My Read Shelf ({len(read_ids)} titles)",
-                    description="View all manga you've marked as read",
-                    thumbnail_url="https://img.icons8.com/color/96/book-stack.png",
-                    input_message_content=InputTextMessageContent(
-                        _format_shelf_text("Read Shelf", "📖", read_ids),
-                        parse_mode="HTML",
-                        disable_web_page_preview=True
-                    ),
-                    reply_markup=hub_keyboard
-                )
+            update.inline_query.answer(
+                results,
+                cache_time=1,
+                is_personal=True,
+                switch_pm_text="🔍 Search All Manga Titles",
+                switch_pm_parameter="search"
             )
+            return
 
-            # Shelf: Completed
-            results.append(
-                InlineQueryResultArticle(
-                    id="hub_comp",
-                    title=f"🏁 Completed Manga ({len(comp_ids)} titles)",
-                    description="Manga you've finished reading",
-                    thumbnail_url="https://img.icons8.com/color/96/finish-flag.png",
-                    input_message_content=InputTextMessageContent(
-                        _format_shelf_text("Completed List", "🏁", comp_ids),
-                        parse_mode="HTML",
-                        disable_web_page_preview=True
-                    ),
-                    reply_markup=hub_keyboard
-                )
-            )
+        # -------------------------------------------------------------
+        # 📚 3. COMPLETE 127+ MANGA CATALOG & SEARCH (With Pagination)
+        # -------------------------------------------------------------
+        all_manga = get_all_manga_cached()
 
-            # Shelf: On Hold
-            results.append(
-                InlineQueryResultArticle(
-                    id="hub_hold",
-                    title=f"⏸️ On Hold Manga ({len(hold_ids)} titles)",
-                    description="Manga paused for later",
-                    thumbnail_url="https://img.icons8.com/color/96/pause-button.png",
-                    input_message_content=InputTextMessageContent(
-                        _format_shelf_text("On Hold Shelf", "⏸️", hold_ids),
-                        parse_mode="HTML",
-                        disable_web_page_preview=True
-                    ),
-                    reply_markup=hub_keyboard
-                )
-            )
-
-            # Shelf: Dropped
-            results.append(
-                InlineQueryResultArticle(
-                    id="hub_drop",
-                    title=f"👋 Dropped Manga ({len(drop_ids)} titles)",
-                    description="Manga you decided to drop",
-                    thumbnail_url="https://img.icons8.com/color/96/trash--v1.png",
-                    input_message_content=InputTextMessageContent(
-                        _format_shelf_text("Dropped Shelf", "👋", drop_ids),
-                        parse_mode="HTML",
-                        disable_web_page_preview=True
-                    ),
-                    reply_markup=hub_keyboard
-                )
-            )
-
-            # If user explicitly searched for hub/shelf keywords, return hub shelves right away
-            if is_hub_query:
-                update.inline_query.answer(
-                    results,
-                    cache_time=5,
-                    is_personal=True,
-                    switch_pm_text="🔍 Search All Manga Titles",
-                    switch_pm_parameter="search"
-                )
-                return
-
-        # =========================================================
-        # 📚 2. MANGA CATALOG & SEARCH RESULTS (Alphabetical A-Z)
-        # =========================================================
         if not query_text:
-            all_manga = get_all_manga_cached()
-            # Sort cleanly in Alphabetical A-Z order for easy browsing
-            search_results = sorted(all_manga, key=lambda x: x.get("name", "").strip().lower())[:45]
+            # Full library sorted A-Z
+            all_matches = sorted(all_manga, key=lambda x: x.get("name", "").strip().lower())
         else:
-            search_results = search_manga_by_name(query_text, limit=45)
+            # Full Fuzzy + Substring match across all 127+ titles
+            all_matches = search_manga_by_name(query_text, limit=150, cutoff=35)
 
-        for manga in search_results:
+        # Slice current page with next_offset
+        total_items = len(all_matches)
+        page_items = all_matches[offset : offset + PAGE_SIZE]
+        next_offset = str(offset + PAGE_SIZE) if (offset + PAGE_SIZE) < total_items else ""
+
+        # Prepend quick Hub card on initial empty search at offset 0
+        if not query_text and offset == 0:
+            read_ids = lists.get("read", [])
+            fav_ids = lists.get("favorite", [])
+            results.append(
+                InlineQueryResultArticle(
+                    id="hub_quick_card",
+                    title=f"🛸 {user_name}'s Reading Hub",
+                    description=f"📊 {len(read_ids)} Read • ❤️ {len(fav_ids)} Fav • 📌 {len(bookmarks)} Bookmarks",
+                    thumbnail_url="https://img.icons8.com/color/96/planet.png",
+                    input_message_content=InputTextMessageContent(
+                        _format_hub_overview(user_name, lists, bookmarks, sub_ids, badges),
+                        parse_mode="HTML",
+                        disable_web_page_preview=True
+                    ),
+                    reply_markup=InlineKeyboardMarkup([
+                        [
+                            InlineKeyboardButton("🌌 Launch Web Hub", url=f"https://t.me/{bot_username}?start=webhub"),
+                            InlineKeyboardButton("📚 Web Catalog", url=f"https://t.me/{bot_username}?start=web")
+                        ]
+                    ])
+                )
+            )
+
+        for manga in page_items:
             raw_name = manga.get("name", "Unknown Title")
             title = raw_name.title()
             channel_id = manga.get("channel_id")
@@ -292,7 +326,7 @@ def inline_query(update, context):
             total_chapters = manga.get("total_chapters")
             cover_image = f"{WEB_APP_URL}/api/image/{channel_id}"
 
-            # In-memory status tags (0ms)
+            # In-memory status tags
             status_list = user_shelf_map.get(channel_id, []) if channel_id else []
             status_tags = []
             if "favorite" in status_list: status_tags.append("❤️ Fav")
@@ -305,7 +339,7 @@ def inline_query(update, context):
             chap_str = f" • {total_chapters} ch" if total_chapters else ""
             description = f"{status_str}{chap_str}"
 
-            # In-memory ratings (0ms)
+            # In-memory ratings
             rating_data = all_ratings.get(channel_id, {"avg_rating": 0.0, "total_ratings": 0}) if channel_id else {}
             avg = rating_data.get("avg_rating", 0.0)
             count = rating_data.get("total_ratings", 0)
@@ -331,11 +365,11 @@ def inline_query(update, context):
                 ]
             ]
 
-            img_file_id = manga.get("image")
-            if img_file_id and isinstance(img_file_id, str) and not img_file_id.startswith("http"):
+            img_file_id = manga.get("image") or manga.get("image_id") or manga.get("banner") or manga.get("photo")
+            if img_file_id and isinstance(img_file_id, str) and not img_file_id.startswith("http") and len(img_file_id) > 20:
                 results.append(
                     InlineQueryResultCachedPhoto(
-                        id=f"manga_{channel_id}",
+                        id=f"manga_{channel_id}_{offset}",
                         photo_file_id=img_file_id,
                         title=title,
                         description=description,
@@ -347,10 +381,10 @@ def inline_query(update, context):
             else:
                 results.append(
                     InlineQueryResultArticle(
-                        id=f"manga_{channel_id}",
+                        id=f"manga_{channel_id}_{offset}",
                         title=title,
                         description=description,
-                        thumbnail_url=cover_image if img_file_id else "https://img.icons8.com/color/96/book-stack.png",
+                        thumbnail_url=cover_image,
                         thumbnail_width=100,
                         thumbnail_height=140,
                         input_message_content=InputTextMessageContent(
@@ -390,9 +424,10 @@ def inline_query(update, context):
 
         update.inline_query.answer(
             results[:50],
-            cache_time=5,
+            cache_time=1,
             is_personal=True,
-            switch_pm_text="🛸 Open Web Hub Mini App",
+            next_offset=next_offset,
+            switch_pm_text=f"🛸 127+ Manga Catalog (Total: {total_items})",
             switch_pm_parameter="webhub"
         )
     except Exception as e:
