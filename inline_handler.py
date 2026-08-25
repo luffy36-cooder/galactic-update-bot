@@ -125,7 +125,7 @@ def inline_query(update, context):
                     )
                 )
             else:
-                for b in bookmarks:
+                for idx, b in enumerate(bookmarks[:50]):
                     b_manga_name = b.get("manga") or b.get("name", "Unknown")
                     b_ch = b.get("chapter", 1)
                     b_cid = b.get("channel_id")
@@ -147,24 +147,39 @@ def inline_query(update, context):
                         f"<i>Saved bookmark for {html.escape(user_name)}. Tap below to continue reading!</i>"
                     )
 
-                    thumb = f"{WEB_APP_URL}/api/image/{b_cid}" if b_cid else "https://img.icons8.com/color/96/bookmark-ribbon.png"
-                    results.append(
-                        InlineQueryResultArticle(
-                            id=f"bm_{b_cid}_{b_ch}",
-                            title=f"📌 {b_manga_name} — Ch. {b_ch}",
-                            description=f"Continue reading from Chapter {b_ch}",
-                            thumbnail_url=thumb,
-                            input_message_content=InputTextMessageContent(
-                                caption,
+                    m_info = get_manga_by_id(b_cid) if b_cid else None
+                    b_img = m_info.get("image") or m_info.get("image_id") or m_info.get("photo") if m_info else None
+
+                    if b_img and isinstance(b_img, str) and not b_img.startswith("http") and not b_img.startswith("manhwa_covers") and len(b_img) > 20:
+                        results.append(
+                            InlineQueryResultCachedPhoto(
+                                id=f"bm_{b_cid}_{b_ch}_{idx}",
+                                photo_file_id=b_img,
+                                title=f"📌 {b_manga_name} — Ch. {b_ch}",
+                                description=f"Continue reading from Chapter {b_ch}",
+                                caption=caption,
                                 parse_mode="HTML",
-                                disable_web_page_preview=False
-                            ),
-                            reply_markup=bm_kb
+                                reply_markup=bm_kb
+                            )
                         )
-                    )
+                    else:
+                        results.append(
+                            InlineQueryResultArticle(
+                                id=f"bm_{b_cid}_{b_ch}_{idx}",
+                                title=f"📌 {b_manga_name} — Ch. {b_ch}",
+                                description=f"Continue reading from Chapter {b_ch}",
+                                thumbnail_url="https://img.icons8.com/color/96/bookmark-ribbon.png",
+                                input_message_content=InputTextMessageContent(
+                                    caption,
+                                    parse_mode="HTML",
+                                    disable_web_page_preview=False
+                                ),
+                                reply_markup=bm_kb
+                            )
+                        )
 
             update.inline_query.answer(
-                results,
+                results[:50],
                 cache_time=1,
                 is_personal=True,
                 switch_pm_text="📌 Manage Bookmarks in Hub",
@@ -270,7 +285,7 @@ def inline_query(update, context):
             )
 
             update.inline_query.answer(
-                results,
+                results[:50],
                 cache_time=1,
                 is_personal=True,
                 switch_pm_text="🔍 Search All Manga Titles",
@@ -279,7 +294,7 @@ def inline_query(update, context):
             return
 
         # -------------------------------------------------------------
-        # 📚 3. COMPLETE 127+ MANGA CATALOG & SEARCH (With Pagination)
+        # 📚 3. COMPLETE MANGA CATALOG & SEARCH (With Pagination)
         # -------------------------------------------------------------
         all_manga = get_all_manga_cached()
 
@@ -287,7 +302,7 @@ def inline_query(update, context):
             # Full library sorted A-Z
             all_matches = sorted(all_manga, key=lambda x: x.get("name", "").strip().lower())
         else:
-            # Full Fuzzy + Substring match across all 127+ titles
+            # Full Fuzzy + Substring match across all titles
             all_matches = search_manga_by_name(query_text, limit=150, cutoff=35)
 
         # Slice current page with next_offset
@@ -319,13 +334,12 @@ def inline_query(update, context):
                 )
             )
 
-        for manga in page_items:
+        for idx, manga in enumerate(page_items):
             raw_name = manga.get("name", "Unknown Title")
             title = raw_name.title()
             channel_id = manga.get("channel_id")
             channel_link = manga.get("channel_link") or f"https://t.me/c/{str(channel_id)[4:]}/1"
             total_chapters = manga.get("total_chapters")
-            cover_image = f"{WEB_APP_URL}/api/image/{channel_id}"
 
             # In-memory status tags
             status_list = user_shelf_map.get(channel_id, []) if channel_id else []
@@ -375,23 +389,53 @@ def inline_query(update, context):
                 ]
             ]
 
-            img_file_id = manga.get("image") or manga.get("image_id") or manga.get("banner") or manga.get("photo")
-            photo_target_url = cover_image
-            if img_file_id and isinstance(img_file_id, str) and (img_file_id.startswith("http://") or img_file_id.startswith("https://")):
-                photo_target_url = img_file_id
+            img_file_id = manga.get("image") or manga.get("image_id") or manga.get("photo")
+            banner = manga.get("banner")
+            result_id = f"manga_{channel_id}_{offset}_{idx}"
 
-            results.append(
-                InlineQueryResultPhoto(
-                    id=f"manga_{channel_id}_{offset}",
-                    photo_url=photo_target_url,
-                    thumbnail_url=photo_target_url,
-                    title=f"📚 {title}",
-                    description=item_description,
-                    caption=caption_text,
-                    parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup(buttons)
+            # 1. High-Speed Telegram Native Photo Cache (0ms latency, zero HTTP requests)
+            if img_file_id and isinstance(img_file_id, str) and not img_file_id.startswith("http") and not img_file_id.startswith("manhwa_covers") and len(img_file_id) > 20:
+                results.append(
+                    InlineQueryResultCachedPhoto(
+                        id=result_id,
+                        photo_file_id=img_file_id,
+                        title=f"📚 {title}",
+                        description=item_description,
+                        caption=caption_text,
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
                 )
-            )
+            # 2. Public HTTP(S) Banner Image URL
+            elif banner and isinstance(banner, str) and (banner.startswith("http://") or banner.startswith("https://")):
+                results.append(
+                    InlineQueryResultPhoto(
+                        id=result_id,
+                        photo_url=banner,
+                        thumbnail_url=banner,
+                        title=f"📚 {title}",
+                        description=item_description,
+                        caption=caption_text,
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
+                )
+            # 3. Clean Interactive Article Card (100% Reliable Fallback)
+            else:
+                results.append(
+                    InlineQueryResultArticle(
+                        id=result_id,
+                        title=f"📚 {title}",
+                        description=item_description,
+                        thumbnail_url="https://img.icons8.com/color/96/book-stack.png",
+                        input_message_content=InputTextMessageContent(
+                            caption_text,
+                            parse_mode="HTML",
+                            disable_web_page_preview=False
+                        ),
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
+                )
 
         if not results:
             no_match_text = (
@@ -419,10 +463,11 @@ def inline_query(update, context):
                 )
             )
 
+        is_personal_query = bool(query_text and query_text.strip().lower() in ["bm", "bookmark", "hub", "myhub", "fav", "read"])
         update.inline_query.answer(
             results[:50],
-            cache_time=1,
-            is_personal=True,
+            cache_time=1 if is_personal_query else 60,
+            is_personal=is_personal_query,
             next_offset=next_offset,
             switch_pm_text=f"🛸 127+ Manga Catalog (Total: {total_items})",
             switch_pm_parameter="webhub"
