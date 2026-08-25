@@ -218,6 +218,8 @@ function setupEventListeners() {
       cycleReaderWidth();
     } else if (e.key === 'f' || e.key === 'F') {
       toggleImmersiveZenMode();
+    } else if (e.key === 'l' || e.key === 'L') {
+      toggleScreenLock();
     } else if (e.key === 'b' || e.key === 'B') {
       triggerManualBookmark();
     } else if (e.key === 'm' || e.key === 'M') {
@@ -875,11 +877,70 @@ function handleToolbarScroll() {
 }
 
 let isImmersiveMode = false;
+let isScreenLocked = false;
 let touchStartX = 0;
 let touchStartY = 0;
 let touchStartTime = 0;
+let lastTapTime = 0;
+let lastTapX = 0;
+let lastTapY = 0;
+let lockBadgeTimeout = null;
+
+function toggleScreenLock(forceState = null) {
+  if (forceState !== null) {
+    isScreenLocked = forceState;
+  } else {
+    isScreenLocked = !isScreenLocked;
+  }
+
+  hapticFeedback('impact');
+
+  const body = document.body;
+  const floatingBtn = document.getElementById('btnFloatingLock');
+  const floatingIcon = document.getElementById('floatingLockIcon');
+
+  if (isScreenLocked) {
+    body.classList.add('reader-locked', 'zen-immersive-mode');
+    if (floatingBtn) floatingBtn.classList.add('locked');
+    if (floatingIcon) floatingIcon.className = 'fa-solid fa-lock';
+
+    if (window.Telegram?.WebApp?.requestFullscreen) {
+      try { window.Telegram.WebApp.requestFullscreen(); } catch (e) {}
+    }
+
+    showLockBadge('🔒 Screen Locked (Double-tap screen to unlock)');
+  } else {
+    body.classList.remove('reader-locked', 'zen-immersive-mode');
+    if (floatingBtn) floatingBtn.classList.remove('locked');
+    if (floatingIcon) floatingIcon.className = 'fa-solid fa-lock-open';
+
+    showLockBadge('🔓 Screen Unlocked (Controls Active)');
+
+    const navbar = document.getElementById('readerNavbar');
+    const footer = document.getElementById('readerFooter');
+    if (navbar) navbar.classList.remove('hidden');
+    if (footer) footer.classList.remove('hidden');
+  }
+}
+
+function showLockBadge(msg) {
+  const badge = document.getElementById('screenLockBadge');
+  if (!badge) return;
+  const span = badge.querySelector('span');
+  if (span) span.textContent = msg;
+  badge.style.display = 'flex';
+  clearTimeout(lockBadgeTimeout);
+  lockBadgeTimeout = setTimeout(() => {
+    badge.style.display = 'none';
+  }, 2200);
+}
 
 function toggleImmersiveZenMode(forceState = null) {
+  if (isScreenLocked) {
+    showLockBadge('🔒 Screen is Locked • Double-tap to unlock');
+    return;
+  }
+
   if (forceState !== null) {
     isImmersiveMode = forceState;
   } else {
@@ -929,6 +990,15 @@ function toggleImmersiveZenMode(forceState = null) {
 
 function setupImmersiveTapHandlers() {
   const viewport = document.getElementById('readerViewport');
+  const floatingBtn = document.getElementById('btnFloatingLock');
+
+  if (floatingBtn) {
+    floatingBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleScreenLock();
+    });
+  }
+
   if (!viewport) return;
 
   viewport.addEventListener('touchstart', (e) => {
@@ -940,28 +1010,50 @@ function setupImmersiveTapHandlers() {
   }, { passive: true });
 
   viewport.addEventListener('touchend', (e) => {
-    if (e.target.closest('button, input, select, textarea, .comment-card-item, .reaction-pill-btn, .modal-card, .social-box-header, .comment-input-wrap, a, .chapter-reactions-box, .chapter-comments-box')) {
+    if (e.target.closest('button, input, select, textarea, .comment-card-item, .reaction-pill-btn, .modal-card, .social-box-header, .comment-input-wrap, a, .chapter-reactions-box, .chapter-comments-box, .floating-lock-btn')) {
       return;
     }
 
     if (e.changedTouches.length === 1) {
-      const deltaX = Math.abs(e.changedTouches[0].clientX - touchStartX);
-      const deltaY = Math.abs(e.changedTouches[0].clientY - touchStartY);
+      const curX = e.changedTouches[0].clientX;
+      const curY = e.changedTouches[0].clientY;
+      const deltaX = Math.abs(curX - touchStartX);
+      const deltaY = Math.abs(curY - touchStartY);
       const duration = Date.now() - touchStartTime;
+      const now = Date.now();
 
-      if (deltaX < 14 && deltaY < 14 && duration < 320) {
-        toggleImmersiveZenMode();
+      // Clean tap without drag/scroll
+      if (deltaX < 18 && deltaY < 18 && duration < 320) {
+        const timeSinceLastTap = now - lastTapTime;
+        const tapDistance = Math.hypot(curX - lastTapX, curY - lastTapY);
+
+        if (timeSinceLastTap < 360 && tapDistance < 50) {
+          // ⚡ DOUBLE-TAP DETECTED: Toggle Screen Lock!
+          toggleScreenLock();
+          lastTapTime = 0;
+        } else {
+          // 👆 SINGLE-TAP DETECTED
+          lastTapTime = now;
+          lastTapX = curX;
+          lastTapY = curY;
+
+          if (isScreenLocked) {
+            showLockBadge('🔒 Screen is Locked • Double-tap to unlock');
+            hapticFeedback('selection');
+          } else {
+            toggleImmersiveZenMode();
+          }
+        }
       }
     }
   });
 
-  viewport.addEventListener('click', (e) => {
-    if (e.target.closest('button, input, select, textarea, .comment-card-item, .reaction-pill-btn, .modal-card, .social-box-header, .comment-input-wrap, a, .chapter-reactions-box, .chapter-comments-box')) {
+  // Desktop double-click
+  viewport.addEventListener('dblclick', (e) => {
+    if (e.target.closest('button, input, select, textarea, .comment-card-item, .reaction-pill-btn, .modal-card, .social-box-header, .comment-input-wrap, a, .chapter-reactions-box, .chapter-comments-box, .floating-lock-btn')) {
       return;
     }
-    if (e.target.closest('.webtoon-page-wrapper, .webtoon-scroll-view, #pageFlipContainer, #flipCanvas')) {
-      toggleImmersiveZenMode();
-    }
+    toggleScreenLock();
   });
 }
 

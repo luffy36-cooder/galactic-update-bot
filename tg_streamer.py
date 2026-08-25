@@ -109,31 +109,50 @@ class MTProtoStreamer:
             return cache_path
         return None
 
-    def stream_pdf(self, channel_id: int, msg_id: int):
-        """Generates stream chunks of the PDF with zero file size limits!"""
-        q = queue.Queue(maxsize=16)
+    def stream_pdf_with_size(self, channel_id: int, msg_id: int):
+        """Generates stream chunks of the PDF and returns (size, filename, chunk_generator)."""
+        q = queue.Queue(maxsize=32)
+        meta_event = threading.Event()
+        meta = {"size": 0, "filename": f"Chapter_{msg_id}.pdf"}
 
         async def _download():
             try:
+                if not self.client.is_connected():
+                    await self.client.connect()
                 msg = await self.client.get_messages(channel_id, ids=msg_id)
                 if msg and msg.document:
-                    async for chunk in self.client.iter_download(msg.document, chunk_size=256 * 1024):
+                    meta["size"] = msg.document.size
+                    meta["filename"] = (msg.file.name if msg.file else None) or meta["filename"]
+                    meta_event.set()
+                    async for chunk in self.client.iter_download(msg.document, chunk_size=512 * 1024):
                         q.put(chunk)
                 else:
                     logger.warning(f"No document on message ID {msg_id} in channel {channel_id}")
+                    meta_event.set()
             except Exception as e:
-                logger.error(f"Error in MTProto iter_download: {e}")
+                logger.error(f"Error in MTProto iter_download for {channel_id}:{msg_id} -> {e}")
+                meta_event.set()
             finally:
                 q.put(None)
 
         if self.loop and self.loop.is_running():
             asyncio.run_coroutine_threadsafe(_download(), self.loop)
 
-        while True:
-            chunk = q.get()
-            if chunk is None:
-                break
-            yield chunk
+        meta_event.wait(timeout=15)
+
+        def _gen():
+            while True:
+                chunk = q.get()
+                if chunk is None:
+                    break
+                yield chunk
+
+        return meta["size"], meta["filename"], _gen()
+
+    def stream_pdf(self, channel_id: int, msg_id: int):
+        """Generates stream chunks of the PDF with zero file size limits!"""
+        _, _, gen = self.stream_pdf_with_size(channel_id, msg_id)
+        return gen
 
     def scan_channel_batch(self, channel_id: int, start_id: int = 1, end_id: int = 400) -> int:
         """Batch-fetches up to 400 messages in seconds and indexes all PDF chapters into DB!"""

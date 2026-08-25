@@ -1,6 +1,6 @@
 import os
 import logging
-from flask import request, jsonify, render_template, redirect, Response, send_file
+from flask import request, jsonify, render_template, redirect, Response, send_file, stream_with_context
 from database import (
     manga_col,
     ratings_col,
@@ -616,11 +616,13 @@ def register_web_routes(app, bot_getter=None):
         msg_id = chap_doc.get("msg_id")
         if msg_id:
             try:
-                from tg_streamer import get_streamer
+                from tg_streamer import get_streamer, CACHE_DIR
                 streamer = get_streamer()
-                file_path = streamer.get_or_download_pdf(channel_id, msg_id)
-                if file_path and os.path.exists(file_path):
-                    # Proactively pre-cache the next chapter in background
+                cache_path = os.path.join(CACHE_DIR, f"{channel_id}_{msg_id}.pdf")
+
+                # If already cached on disk, send instantly with HTTP 206 Range support
+                if os.path.exists(cache_path) and os.path.getsize(cache_path) > 5000:
+                    # Pre-cache next chapter in background
                     try:
                         next_doc = get_chapter_file(channel_id, chapter + 1)
                         if next_doc and next_doc.get("msg_id"):
@@ -629,12 +631,56 @@ def register_web_routes(app, bot_getter=None):
                         pass
 
                     resp = send_file(
-                        file_path,
+                        cache_path,
                         mimetype="application/pdf",
                         as_attachment=False,
                         download_name=f"Chapter_{chapter}.pdf",
                         conditional=True
                     )
+                    resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
+                    resp.headers["Accept-Ranges"] = "bytes"
+                    resp.headers["Access-Control-Allow-Origin"] = "*"
+                    resp.headers["Access-Control-Allow-Headers"] = "Range, Content-Type, Accept"
+                    resp.headers["Access-Control-Expose-Headers"] = "Content-Range, Content-Length, Accept-Ranges"
+                    return resp
+
+                # If not cached yet: LIVE STREAM chunks immediately from Telegram!
+                doc_size, filename, chunk_gen = streamer.stream_pdf_with_size(channel_id, msg_id)
+                if doc_size > 0:
+                    # Pre-cache next chapter in background
+                    try:
+                        next_doc = get_chapter_file(channel_id, chapter + 1)
+                        if next_doc and next_doc.get("msg_id"):
+                            streamer.prefetch_pdf_async(channel_id, next_doc["msg_id"])
+                    except Exception:
+                        pass
+
+                    def stream_and_cache():
+                        temp_path = f"{cache_path}.tmp"
+                        f = None
+                        try:
+                            f = open(temp_path, "wb")
+                        except Exception:
+                            pass
+                        try:
+                            for chunk in chunk_gen:
+                                if f:
+                                    try: f.write(chunk)
+                                    except Exception: pass
+                                yield chunk
+                        finally:
+                            if f:
+                                try: f.close()
+                                except Exception: pass
+                                if os.path.exists(temp_path) and os.path.getsize(temp_path) > 5000:
+                                    if os.path.exists(cache_path):
+                                        try: os.remove(cache_path)
+                                        except Exception: pass
+                                    try: os.rename(temp_path, cache_path)
+                                    except Exception: pass
+
+                    resp = Response(stream_with_context(stream_and_cache()), mimetype="application/pdf")
+                    resp.headers["Content-Length"] = str(doc_size)
                     resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
                     resp.headers["Accept-Ranges"] = "bytes"
                     resp.headers["Access-Control-Allow-Origin"] = "*"
