@@ -98,6 +98,10 @@ def broadcast_cmd(update: Update, context: CallbackContext):
             "  <code>/broadcast manga=Solo Leveling &lt;message&gt;</code>\n\n"
             "• <b>All Group Chats (GC):</b>\n"
             "  <code>/broadcast gc &lt;message&gt;</code>\n\n"
+            "• <b>Auto-Pin Option (📌 Pin Message):</b>\n"
+            "  <code>/broadcast -pin &lt;message&gt;</code>\n"
+            "  <code>/broadcast -pin gc &lt;message&gt;</code>\n"
+            "  <i>(Or reply with <code>/broadcast -pin</code>)</i>\n\n"
             "• <b>Add Custom Buttons:</b>\n"
             "  <code>/broadcast Hello! button=Open Web|https://t.me/bot?start=web</code>\n\n"
             "• <b>Check History:</b> <code>/bdst</code>\n"
@@ -105,7 +109,17 @@ def broadcast_cmd(update: Update, context: CallbackContext):
             parse_mode="HTML"
         )
 
-    # 1. Determine Target Type & Target List
+    # 1. Determine Pinning Option
+    should_pin = False
+    filtered_args = []
+    for a in args:
+        if a.lower() in ["-pin", "pin", "--pin"]:
+            should_pin = True
+        else:
+            filtered_args.append(a)
+    args = filtered_args
+
+    # 2. Determine Target Type & Target List
     target_type = "all_channels"
     target_desc = "All Manga Channels"
     target_chat_ids = []
@@ -159,10 +173,11 @@ def broadcast_cmd(update: Update, context: CallbackContext):
 
     broadcast_id = update.message.message_id
     total_targets = len(target_chat_ids)
+    pin_str = " (📌 Auto-Pin Enabled)" if should_pin else ""
 
     status_msg = update.message.reply_text(
         f"🚀 <b>Starting Broadcast #{broadcast_id}...</b>\n\n"
-        f"🎯 <b>Target:</b> <code>{html.escape(target_desc)}</code>\n"
+        f"🎯 <b>Target:</b> <code>{html.escape(target_desc)}</code>{pin_str}\n"
         f"📊 <b>Total Chats:</b> <b>{total_targets}</b>\n\n"
         f"<i>Sending in background...</i>",
         parse_mode="HTML"
@@ -195,6 +210,13 @@ def broadcast_cmd(update: Update, context: CallbackContext):
                     )
                     msg_id = sent.message_id
 
+                # Auto-Pin message if requested
+                if should_pin:
+                    try:
+                        context.bot.pin_chat_message(chat_id=cid, message_id=msg_id, disable_notification=False)
+                    except Exception as pe:
+                        logger.debug(f"Pin notice in {cid}: {pe}")
+
                 sent_records.append({"chat_id": cid, "msg_id": msg_id})
                 sent_count += 1
             except Exception as e:
@@ -208,6 +230,7 @@ def broadcast_cmd(update: Update, context: CallbackContext):
             "admin_id": user_id,
             "target_type": target_type,
             "target_desc": target_desc,
+            "is_pinned": should_pin,
             "content_preview": (preview[:80] + "...") if len(preview) > 80 else preview,
             "total_targets": total_targets,
             "sent_count": sent_count,
@@ -215,10 +238,11 @@ def broadcast_cmd(update: Update, context: CallbackContext):
             "channel_msgs": sent_records
         })
 
+        pinned_badge = " • 📌 Pinned" if should_pin else ""
         try:
             status_msg.edit_text(
                 f"✅ <b>Broadcast #{broadcast_id} Complete!</b> 🌌\n\n"
-                f"🎯 <b>Target:</b> {html.escape(target_desc)}\n"
+                f"🎯 <b>Target:</b> {html.escape(target_desc)}{pinned_badge}\n"
                 f"📤 <b>Successfully Sent:</b> <b>{sent_count}</b>\n"
                 f"❌ <b>Failed / Inaccessible:</b> <b>{failed_count}</b>\n"
                 f"🆔 <b>Broadcast ID:</b> <code>{broadcast_id}</code>\n\n"
@@ -231,7 +255,7 @@ def broadcast_cmd(update: Update, context: CallbackContext):
                 chat_id=user_id,
                 text=(
                     f"✅ <b>Broadcast #{broadcast_id} Finished!</b>\n"
-                    f"Sent: {sent_count} | Failed: {failed_count}\n"
+                    f"Sent: {sent_count} | Failed: {failed_count}{pinned_badge}\n"
                     f"To undo: <code>/delete_broadcast {broadcast_id}</code>"
                 ),
                 parse_mode="HTML"

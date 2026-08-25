@@ -41,11 +41,19 @@ def dmbroadcast_cmd(update: Update, context: CallbackContext):
         update.message.reply_text("⚠️ No users found in database to broadcast to.")
         return
 
-    status_msg = update.message.reply_text(f"🚀 Starting DM broadcast to {len(user_ids)} users...")
+    # Check if pin requested
+    should_pin = False
+    if context.args:
+        for a in context.args:
+            if a.lower() in ["-pin", "pin", "--pin"]:
+                should_pin = True
 
     sent_records = []
     success = 0
     failed = 0
+    pin_badge = " (📌 Auto-Pin Enabled)" if should_pin else ""
+
+    status_msg = update.message.reply_text(f"🚀 Starting DM broadcast to {len(user_ids)} users...{pin_badge}")
 
     for uid in user_ids:
         try:
@@ -56,6 +64,13 @@ def dmbroadcast_cmd(update: Update, context: CallbackContext):
                 message_id=reply_msg.message_id,
                 disable_notification=False
             )
+
+            if should_pin:
+                try:
+                    context.bot.pin_chat_message(chat_id=uid, message_id=sent_msg.message_id, disable_notification=False)
+                except Exception:
+                    pass
+
             sent_records.append({"chat_id": uid, "msg_id": sent_msg.message_id})
             success += 1
         except Exception as e:
@@ -70,6 +85,7 @@ def dmbroadcast_cmd(update: Update, context: CallbackContext):
             "admin_id": user_id,
             "target_type": "dms",
             "target_desc": f"All Bot Users ({len(user_ids)})",
+            "is_pinned": should_pin,
             "content_preview": (preview[:80] + "...") if len(preview) > 80 else preview,
             "total_targets": len(user_ids),
             "sent_count": success,
@@ -77,8 +93,9 @@ def dmbroadcast_cmd(update: Update, context: CallbackContext):
             "records": sent_records
         })
 
+    pinned_summary = " • 📌 Pinned" if should_pin else ""
     status_msg.edit_text(
-        f"✅ <b>DM Broadcast Finished!</b>\n\n"
+        f"✅ <b>DM Broadcast Finished!</b>{pinned_summary}\n\n"
         f"• Sent Successfully: <b>{success}</b>\n"
         f"• Failed / Blocked: <b>{failed}</b>\n"
         f"• Broadcast ID: <code>{update.message.message_id}</code>\n\n"
