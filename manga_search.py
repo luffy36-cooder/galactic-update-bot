@@ -23,28 +23,37 @@ def search_by_command(update: Update, context: CallbackContext):
 
 
 # ===============================
-# ✅ Group text-based search mode
+# ✅ Group & PM text-based search mode
 # ===============================
 def search_by_text_if_enabled(update: Update, context: CallbackContext):
-    chat = update.effective_chat
-    if chat.type not in ["group", "supergroup"]:
+    if not update.message or not update.message.text:
         return
 
-    text = (update.message.text or "").strip()
-    if not text:
+    text = update.message.text.strip()
+    if not text or text.startswith("/"):
         return
 
-    # Route #request <name> or request <name> directly to request_manga
-    if text.lower().startswith("#request") or text.lower().startswith("request "):
+    # Route request commands directly to request_handler
+    text_lower = text.lower()
+    if text_lower.startswith("#request") or text_lower.startswith("request"):
         from request_handler import request_manga
         return request_manga(update, context)
 
-    mode = get_group_mode(chat.id)
-    if mode != "text":
+    chat = update.effective_chat
+    if not chat:
         return
 
-    if len(text.split()) > 6:
-        return
+    # In groups, check if text mode is enabled
+    if chat.type in ["group", "supergroup"]:
+        mode = get_group_mode(chat.id)
+        if mode != "text":
+            return
+        if len(text.split()) > 8:
+            return
+    elif chat.type == "private":
+        # In private chat, allow direct text search
+        if len(text.split()) > 10:
+            return
 
     send_search_result(update, context, text)
 
@@ -53,24 +62,34 @@ def search_by_text_if_enabled(update: Update, context: CallbackContext):
 # 🔍 Search result handler
 # ========================
 def send_search_result(update_or_query, context: CallbackContext, query: str):
-    results = search_manga_by_name(query)
+    results = search_manga_by_name(query, limit=6)
 
     if not results:
-        send_message(update_or_query, "⚠️ No matching manga found.\nTry checking the spelling or use a shorter title.")
+        send_message(
+            update_or_query,
+            "⚠️ <b>No matching manga found.</b>\nTry checking the spelling, using a shorter title, or request it with <code>/request &lt;name&gt;</code>.",
+            parse_mode="HTML"
+        )
         return
 
-    # Multiple results → ask user to pick
+    # Multiple results → ask user to pick with rich buttons
     if len(results) > 1:
         user_id = get_user_id(update_or_query)
-        buttons = [
-            [InlineKeyboardButton(m["name"].title(), callback_data=f"select_{m['channel_id']}_{user_id}")]
-            for m in results
-        ]
+        buttons = []
+        for m in results:
+            m_name = m.get("name", "Unknown").title()
+            ch_count = m.get("total_chapters")
+            ch_str = f" ({ch_count} ch)" if ch_count else ""
+            label = f"📚 {m_name[:32]}{ch_str}"
+            buttons.append([InlineKeyboardButton(label, callback_data=f"select_{m['channel_id']}_{user_id}")])
+
         keyboard = InlineKeyboardMarkup(buttons)
-        send_message(update_or_query,
-                     f"🔎 Found multiple matches for <b>{html.escape(query)}</b>. Please select:",
-                     reply_markup=keyboard,
-                     parse_mode="HTML")
+        send_message(
+            update_or_query,
+            f"🔎 Found <b>{len(results)} matches</b> for <code>{html.escape(query)}</code>. Please select:",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
         return
 
     # Only one result → show manga info

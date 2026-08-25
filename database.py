@@ -187,41 +187,45 @@ def update_manga_image(channel_id, image_file_id):
 # ==========================================
 # 🔍 Manga Search (In-Memory RapidFuzz: <1ms)
 # ==========================================
-def search_manga_by_name(query: str, limit: int = 5, cutoff: int = 55):
+def search_manga_by_name(query: str, limit: int = 6, cutoff: int = 50):
     if not query or not query.strip():
         return []
 
     clean_query = query.strip()
+    clean_lower = clean_query.lower()
     all_manga = _get_cached_manga_list()
     if not all_manga:
         return []
 
     # 🥇 Step 1: Exact case-insensitive match
-    exact = next((m for m in all_manga if m.get("name", "").lower() == clean_query.lower()), None)
+    exact = next((m for m in all_manga if m.get("name", "").lower() == clean_lower), None)
     if exact:
         return [exact]
 
-    # 🥈 Step 2: In-memory fuzzy search using token_set_ratio for precise title match
+    # 🥈 Step 2: Substring matching (e.g. "solo", "demon", "dragon", "villain")
+    substring_matches = [m for m in all_manga if clean_lower in m.get("name", "").lower()]
+
+    # 🥉 Step 3: Fuzzy token-set matching
     names = [m.get("name", "") for m in all_manga if m.get("name")]
-    if not names:
+    fuzzy_res = process.extract(clean_query, names, scorer=fuzz.token_set_ratio, limit=limit)
+    fuzzy_names = [f[0] for f in fuzzy_res if f[1] >= cutoff]
+
+    combined_names = []
+    for m in substring_matches:
+        n = m.get("name")
+        if n and n not in combined_names:
+            combined_names.append(n)
+
+    for n in fuzzy_names:
+        if n and n not in combined_names:
+            combined_names.append(n)
+
+    if not combined_names:
         return []
 
-    # Score using token_set_ratio which prioritizes full title word matches over partial substring length
-    matches = process.extract(clean_query, names, scorer=fuzz.token_set_ratio, limit=limit)
-    valid_matches = [m for m in matches if m[1] >= cutoff]
-
-    if not valid_matches:
-        # Fallback to token_sort_ratio
-        matches = process.extract(clean_query, names, scorer=fuzz.token_sort_ratio, limit=limit)
-        valid_matches = [m for m in matches if m[1] >= cutoff]
-
-    if not valid_matches:
-        return []
-
-    matched_names = [m[0] for m in valid_matches]
-    results = [m for m in all_manga if m.get("name") in matched_names]
-    results.sort(key=lambda x: matched_names.index(x.get("name", "")))
-    return results
+    results = [m for m in all_manga if m.get("name") in combined_names]
+    results.sort(key=lambda x: combined_names.index(x.get("name", "")))
+    return results[:limit]
 
 
 # ==========================================

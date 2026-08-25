@@ -59,7 +59,10 @@ def inline_query(update, context):
                     message_content,
                     parse_mode="HTML",
                     disable_web_page_preview=False
-                )
+                ),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📖 Read in Channel", url=channel_link)]
+                ])
             )
         )
 
