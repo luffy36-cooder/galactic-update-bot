@@ -336,14 +336,23 @@ def inline_query(update, context):
             if "dropped" in status_list: status_tags.append("👋 Dropped")
 
             status_str = " | ".join(status_tags) if status_tags else "Not tracked"
-            chap_str = f" • {total_chapters} ch" if total_chapters else ""
-            description = f"{status_str}{chap_str}"
 
             # In-memory ratings
             rating_data = all_ratings.get(channel_id, {"avg_rating": 0.0, "total_ratings": 0}) if channel_id else {}
             avg = rating_data.get("avg_rating", 0.0)
             count = rating_data.get("total_ratings", 0)
             stars_str = f"⭐ <b>{avg}/5.0</b> ({count} reviews)" if count > 0 else "⭐ <i>No ratings yet</i>"
+            stars_plain = f"⭐ {avg}/5.0" if count > 0 else "⭐ New"
+
+            desc_parts = []
+            if total_chapters:
+                desc_parts.append(f"{total_chapters} Chapters")
+            else:
+                desc_parts.append("Ongoing")
+            desc_parts.append(stars_plain)
+            if status_tags:
+                desc_parts.append(status_str)
+            item_description = " • ".join(desc_parts)
 
             safe_title = html.escape(title)
             caption_text = (
@@ -365,36 +374,22 @@ def inline_query(update, context):
                 ]
             ]
 
-            img_file_id = manga.get("image") or manga.get("image_id") or manga.get("banner") or manga.get("photo")
-            if img_file_id and isinstance(img_file_id, str) and not img_file_id.startswith("http") and len(img_file_id) > 20:
-                results.append(
-                    InlineQueryResultCachedPhoto(
-                        id=f"manga_{channel_id}_{offset}",
-                        photo_file_id=img_file_id,
-                        title=title,
-                        description=description,
-                        caption=caption_text,
+            results.append(
+                InlineQueryResultArticle(
+                    id=f"manga_{channel_id}_{offset}",
+                    title=f"📚 {title}",
+                    description=item_description,
+                    thumbnail_url=cover_image,
+                    thumbnail_width=64,
+                    thumbnail_height=64,
+                    input_message_content=InputTextMessageContent(
+                        f"<a href='{cover_image}'>&#8205;</a>" + caption_text,
                         parse_mode="HTML",
-                        reply_markup=InlineKeyboardMarkup(buttons)
-                    )
+                        disable_web_page_preview=False
+                    ),
+                    reply_markup=InlineKeyboardMarkup(buttons)
                 )
-            else:
-                results.append(
-                    InlineQueryResultArticle(
-                        id=f"manga_{channel_id}_{offset}",
-                        title=title,
-                        description=description,
-                        thumbnail_url=cover_image,
-                        thumbnail_width=100,
-                        thumbnail_height=140,
-                        input_message_content=InputTextMessageContent(
-                            caption_text,
-                            parse_mode="HTML",
-                            disable_web_page_preview=False
-                        ),
-                        reply_markup=InlineKeyboardMarkup(buttons)
-                    )
-                )
+            )
 
         if not results:
             no_match_text = (
