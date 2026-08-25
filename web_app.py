@@ -564,13 +564,16 @@ def register_web_routes(app, bot_getter=None):
                 streamer = get_streamer()
                 file_path = streamer.get_or_download_pdf(channel_id, msg_id)
                 if file_path and os.path.exists(file_path):
-                    return send_file(
+                    resp = send_file(
                         file_path,
                         mimetype="application/pdf",
                         as_attachment=False,
                         download_name=f"Chapter_{chapter}.pdf",
                         conditional=True
                     )
+                    resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
+                    resp.headers["Accept-Ranges"] = "bytes"
+                    return resp
             except Exception as e:
                 logger.debug(f"MTProto direct stream fallback: {e}")
 
