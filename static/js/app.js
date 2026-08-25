@@ -1033,3 +1033,46 @@ async function saveAdminMangaEdit() {
     if (saveBtn) saveBtn.disabled = false;
   }
 }
+
+async function handleAdminDeleteManga() {
+  if (!activeDetailManga || !isCurrentUserAdmin) {
+    showToast('Admin authorization required');
+    return;
+  }
+
+  const mName = activeDetailManga.name || 'this manga';
+  const confirmed = confirm(`⚠️ Are you sure you want to PERMANENTLY DELETE "${mName}" from the database?\n\nThis will remove all chapters, ratings, reactions, and bookmarks completely.`);
+  if (!confirmed) return;
+
+  const cid = activeDetailManga.channel_id;
+
+  try {
+    const res = await fetch('/api/admin/delete_manga', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: currentUserId,
+        channel_id: cid
+      })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      showToast(`🗑️ "${mName}" permanently deleted from database!`);
+      hapticFeedback('notification');
+
+      // Remove from catalogData
+      catalogData = catalogData.filter(x => x.channel_id !== cid);
+
+      // Close modals and re-render catalog
+      closeAdminEditModal();
+      closeMangaDetailModal();
+      filterAndRenderCatalog();
+    } else {
+      showToast(data.error || 'Failed to delete manga');
+    }
+  } catch (err) {
+    console.error('Failed to delete manga:', err);
+    showToast('Network error deleting manga');
+  }
+}

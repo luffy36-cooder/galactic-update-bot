@@ -280,9 +280,26 @@ def search_manga_by_name(query: str, limit: int = 6, cutoff: int = 50):
 # ==========================================
 def remove_manga_by_name(name: str):
     escaped_name = re.escape(name.strip())
+    m = manga_col.find_one({"name": {"$regex": f"^{escaped_name}$", "$options": "i"}})
+    if m and m.get("channel_id"):
+        return delete_manga_completely(m["channel_id"])
     res = manga_col.delete_one({"name": {"$regex": f"^{escaped_name}$", "$options": "i"}})
     _invalidate_manga_cache()
     return res.deleted_count > 0
+
+
+def delete_manga_completely(channel_id: int):
+    """Permanently deletes manga and all associated chapters, ratings, reactions, and comments from MongoDB."""
+    m_res = manga_col.delete_one({"channel_id": channel_id})
+    try:
+        chapter_files_col.delete_many({"channel_id": channel_id})
+        ratings_col.delete_many({"channel_id": channel_id})
+        chapter_reactions_col.delete_many({"channel_id": channel_id})
+        chapter_comments_col.delete_many({"channel_id": channel_id})
+    except Exception:
+        pass
+    _invalidate_manga_cache()
+    return m_res.deleted_count > 0
 
 
 def list_all_manga():

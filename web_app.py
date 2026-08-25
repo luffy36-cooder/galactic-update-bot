@@ -287,6 +287,40 @@ def register_web_routes(app, bot_getter=None):
         })
 
     # -------------------------------------------------------------
+    # 🗑️ API: Admin Manga Delete (Permanently removes from Database)
+    # -------------------------------------------------------------
+    @app.route("/api/admin/delete_manga", methods=["POST"])
+    def api_admin_delete_manga():
+        data = request.get_json(force=True, silent=True) or {}
+        user_id_raw = data.get("user_id")
+        cid_raw = data.get("channel_id")
+
+        if not user_id_raw or not cid_raw:
+            return jsonify({"success": False, "error": "user_id and channel_id are required"}), 400
+
+        try:
+            user_id = int(user_id_raw)
+            channel_id = int(cid_raw)
+        except ValueError:
+            return jsonify({"success": False, "error": "Invalid user_id or channel_id format"}), 400
+
+        from database import is_sudo, delete_manga_completely
+        from config import BOT_OWNER_ID
+        if not (user_id == BOT_OWNER_ID or is_sudo(user_id)):
+            return jsonify({"success": False, "error": "Unauthorized: Admin privileges required"}), 403
+
+        deleted = delete_manga_completely(channel_id)
+        if not deleted:
+            return jsonify({"success": False, "error": "Manga not found or already deleted"}), 404
+
+        logger.info(f"🗑️ Admin {user_id} permanently deleted manga {channel_id} from database")
+        return jsonify({
+            "success": True,
+            "message": "Manga permanently deleted from database!",
+            "channel_id": channel_id
+        })
+
+    # -------------------------------------------------------------
     # 👤 API: Reader Profile & Shelves
     # -------------------------------------------------------------
     @app.route("/api/profile", methods=["GET"])

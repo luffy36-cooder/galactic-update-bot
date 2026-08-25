@@ -218,7 +218,10 @@
         <div class="detail-admin-panel" id="detailAdminPanel" style="display: none;">
           <div class="admin-panel-header">
             <span><i class="fa-solid fa-shield-halved"></i> VAULT ADMIN CONTROLS</span>
-            <button class="btn-admin-edit-toggle" onclick="openAdminEditModal()"><i class="fa-solid fa-pen-to-square"></i> Edit Details</button>
+            <div class="admin-actions-group">
+              <button class="btn-admin-edit-toggle" onclick="openAdminEditModal()"><i class="fa-solid fa-pen-to-square"></i> Edit Details</button>
+              <button class="btn-admin-delete-toggle" onclick="handleAdminDeleteManga()"><i class="fa-solid fa-trash-can"></i> Delete Manga</button>
+            </div>
           </div>
         </div>
 
@@ -279,11 +282,16 @@
           <textarea id="adminEditSynopsis" rows="4" placeholder="Enter complete synopsis..."></textarea>
         </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeAdminEditModal()">Cancel</button>
-        <button class="btn btn-primary" id="adminEditSaveBtn" onclick="saveAdminMangaEdit()">
-          <i class="fa-solid fa-floppy-disk"></i> Save Changes
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <button class="btn btn-danger" id="adminEditDeleteBtn" onclick="handleAdminDeleteManga()" style="background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #ef4444;">
+          <i class="fa-solid fa-trash-can"></i> Delete from DB
         </button>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-secondary" onclick="closeAdminEditModal()">Cancel</button>
+          <button class="btn btn-primary" id="adminEditSaveBtn" onclick="saveAdminMangaEdit()">
+            <i class="fa-solid fa-floppy-disk"></i> Save Changes
+          </button>
+        </div>
       </div>
     </div>
   </div>
