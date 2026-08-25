@@ -148,35 +148,30 @@ def inline_query(update, context):
                     )
 
                     m_info = get_manga_by_id(b_cid) if b_cid else None
-                    b_img = m_info.get("image") or m_info.get("image_id") or m_info.get("photo") if m_info else None
+                    b_banner = m_info.get("banner") if m_info else None
+                    b_thumb = "https://img.icons8.com/color/96/bookmark-ribbon.png"
+                    if b_banner and isinstance(b_banner, str) and (b_banner.startswith("http://") or b_banner.startswith("https://")):
+                        b_thumb = b_banner
+                        caption = f"<a href='{b_banner}'>&#8205;</a>" + caption
+                    elif b_cid:
+                        b_thumb = f"{WEB_APP_URL}/api/image/{b_cid}"
 
-                    if b_img and isinstance(b_img, str) and not b_img.startswith("http") and not b_img.startswith("manhwa_covers") and len(b_img) > 20:
-                        results.append(
-                            InlineQueryResultCachedPhoto(
-                                id=f"bm_{b_cid}_{b_ch}_{idx}",
-                                photo_file_id=b_img,
-                                title=f"📌 {b_manga_name} — Ch. {b_ch}",
-                                description=f"Continue reading from Chapter {b_ch}",
-                                caption=caption,
+                    results.append(
+                        InlineQueryResultArticle(
+                            id=f"bm_{b_cid}_{b_ch}_{idx}",
+                            title=f"📌 {b_manga_name} — Ch. {b_ch}",
+                            description=f"Continue reading Chapter {b_ch} • {user_name}",
+                            thumbnail_url=b_thumb,
+                            thumbnail_width=48,
+                            thumbnail_height=48,
+                            input_message_content=InputTextMessageContent(
+                                caption,
                                 parse_mode="HTML",
-                                reply_markup=bm_kb
-                            )
+                                disable_web_page_preview=False
+                            ),
+                            reply_markup=bm_kb
                         )
-                    else:
-                        results.append(
-                            InlineQueryResultArticle(
-                                id=f"bm_{b_cid}_{b_ch}_{idx}",
-                                title=f"📌 {b_manga_name} — Ch. {b_ch}",
-                                description=f"Continue reading from Chapter {b_ch}",
-                                thumbnail_url="https://img.icons8.com/color/96/bookmark-ribbon.png",
-                                input_message_content=InputTextMessageContent(
-                                    caption,
-                                    parse_mode="HTML",
-                                    disable_web_page_preview=False
-                                ),
-                                reply_markup=bm_kb
-                            )
-                        )
+                    )
 
             update.inline_query.answer(
                 results[:50],
@@ -389,53 +384,35 @@ def inline_query(update, context):
                 ]
             ]
 
-            img_file_id = manga.get("image") or manga.get("image_id") or manga.get("photo")
             banner = manga.get("banner")
             result_id = f"manga_{channel_id}_{offset}_{idx}"
 
-            # 1. High-Speed Telegram Native Photo Cache (0ms latency, zero HTTP requests)
-            if img_file_id and isinstance(img_file_id, str) and not img_file_id.startswith("http") and not img_file_id.startswith("manhwa_covers") and len(img_file_id) > 20:
-                results.append(
-                    InlineQueryResultCachedPhoto(
-                        id=result_id,
-                        photo_file_id=img_file_id,
-                        title=f"📚 {title}",
-                        description=item_description,
-                        caption=caption_text,
-                        parse_mode="HTML",
-                        reply_markup=InlineKeyboardMarkup(buttons)
-                    )
-                )
-            # 2. Public HTTP(S) Banner Image URL
-            elif banner and isinstance(banner, str) and (banner.startswith("http://") or banner.startswith("https://")):
-                results.append(
-                    InlineQueryResultPhoto(
-                        id=result_id,
-                        photo_url=banner,
-                        thumbnail_url=banner,
-                        title=f"📚 {title}",
-                        description=item_description,
-                        caption=caption_text,
-                        parse_mode="HTML",
-                        reply_markup=InlineKeyboardMarkup(buttons)
-                    )
-                )
-            # 3. Clean Interactive Article Card (100% Reliable Fallback)
+            # High-res thumbnail URL
+            if banner and isinstance(banner, str) and (banner.startswith("http://") or banner.startswith("https://")):
+                thumb_url = banner
+                # Embed hidden banner link preview so full photo displays when sent to chat
+                caption_text = f"<a href='{banner}'>&#8205;</a>" + caption_text
+            elif channel_id:
+                thumb_url = f"{WEB_APP_URL}/api/image/{channel_id}"
             else:
-                results.append(
-                    InlineQueryResultArticle(
-                        id=result_id,
-                        title=f"📚 {title}",
-                        description=item_description,
-                        thumbnail_url="https://img.icons8.com/color/96/book-stack.png",
-                        input_message_content=InputTextMessageContent(
-                            caption_text,
-                            parse_mode="HTML",
-                            disable_web_page_preview=False
-                        ),
-                        reply_markup=InlineKeyboardMarkup(buttons)
-                    )
+                thumb_url = "https://img.icons8.com/color/96/book-stack.png"
+
+            results.append(
+                InlineQueryResultArticle(
+                    id=result_id,
+                    title=f"📚 {title}",
+                    description=item_description,
+                    thumbnail_url=thumb_url,
+                    thumbnail_width=48,
+                    thumbnail_height=48,
+                    input_message_content=InputTextMessageContent(
+                        caption_text,
+                        parse_mode="HTML",
+                        disable_web_page_preview=False
+                    ),
+                    reply_markup=InlineKeyboardMarkup(buttons)
                 )
+            )
 
         if not results:
             no_match_text = (
