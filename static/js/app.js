@@ -27,6 +27,8 @@ let activeFilter = 'all';
 let selectedBookmarkManga = null;
 let selectedRatingChannelId = null;
 let selectedRatingValue = 5;
+let isCurrentUserAdmin = false;
+let activeDetailManga = null;
 
 // =========================================================
 // ⚡ Telegram Inline Search Integration
@@ -132,6 +134,7 @@ async function fetchCatalog() {
 
     if (data.success) {
       catalogData = data.manga;
+      isCurrentUserAdmin = Boolean(data.is_admin);
       if (countEl) countEl.textContent = `${catalogData.length} Titles Available`;
       filterAndRenderCatalog();
     } else {
@@ -194,14 +197,14 @@ function createMangaCardHtml(item) {
 
   return `
     <div class="manga-card" data-cid="${item.channel_id}" data-name="${escapeHtml(item.name)}">
-      <div class="poster-wrap">
+      <div class="poster-wrap" onclick="openMangaDetailModal(${item.channel_id})" style="cursor:pointer;" title="Tap to view synopsis & details">
         <img src="${item.image_url}" alt="${escapeHtml(item.name)}" loading="lazy" onerror="this.src='/static/images/default_cover.svg'">
         <span class="badge-chapters">${chapCount}</span>
         ${bmBadge}
         ${ratingBadge}
       </div>
       <div class="card-details">
-        <h4 class="manga-title" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
+        <h4 class="manga-title" onclick="openMangaDetailModal(${item.channel_id})" style="cursor:pointer;" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</h4>
         <div class="card-actions">
           <div class="btn-read-row">
             <a href="/reader?cid=${item.channel_id}&ch=${item.bookmark_chapter || 1}&user_id=${currentUserId}" class="btn-read-online">
@@ -793,4 +796,240 @@ function hapticFeedback(type = 'impact') {
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+// =========================================================
+// 🌌 Cyberpunk Manga Detail View Modal & Admin Editing
+// =========================================================
+function openMangaDetailModal(channelId) {
+  const item = catalogData.find(m => m.channel_id === channelId);
+  if (!item) return;
+
+  activeDetailManga = item;
+  hapticFeedback('selection');
+
+  const modal = document.getElementById('mangaDetailModal');
+  const bannerImg = document.getElementById('detailBannerImg');
+  const posterImg = document.getElementById('detailPosterImg');
+  const titleEl = document.getElementById('detailTitle');
+  const genresEl = document.getElementById('detailGenres');
+  const chaptersEl = document.getElementById('detailChapters');
+  const statusEl = document.getElementById('detailStatus');
+  const ratingEl = document.getElementById('detailRating');
+  const trackBtn = document.getElementById('detailTrackBtn');
+  const trackText = document.getElementById('detailTrackText');
+  const favBtn = document.getElementById('detailFavBtn');
+  const synopsisEl = document.getElementById('detailSynopsisText');
+  const charSection = document.getElementById('detailCharactersSection');
+  const charRow = document.getElementById('detailCharactersRow');
+  const adminPanel = document.getElementById('detailAdminPanel');
+  const readOnlineBtn = document.getElementById('detailReadOnlineBtn');
+
+  // 1. Banner & Cover
+  if (bannerImg) {
+    if (item.banner) {
+      bannerImg.src = item.banner;
+      bannerImg.style.display = 'block';
+    } else {
+      bannerImg.style.display = 'none';
+    }
+  }
+  if (posterImg) posterImg.src = item.image_url || '/static/images/default_cover.svg';
+
+  // 2. Title & Genres
+  if (titleEl) titleEl.textContent = item.name;
+  if (genresEl) {
+    const genres = Array.isArray(item.genres) && item.genres.length > 0 ? item.genres : ['Action', 'Fantasy'];
+    genresEl.innerHTML = genres.map(g => `<span class="genre-pill"><i class="fa-solid fa-tag"></i> ${escapeHtml(g)}</span>`).join('');
+  }
+
+  // 3. Stats Grid
+  if (chaptersEl) chaptersEl.textContent = item.total_chapters ? `${item.total_chapters} Ch.` : 'Ongoing';
+  if (statusEl) {
+    const stat = item.manga_status || 'Releasing';
+    statusEl.textContent = stat;
+    statusEl.className = `stat-val ${stat.toLowerCase().includes('finish') ? 'stat-cyan' : 'stat-green'}`;
+  }
+  if (ratingEl) {
+    const scoreVal = item.score || (item.avg_rating ? Math.round(item.avg_rating * 20) : 85);
+    ratingEl.innerHTML = `<i class="fa-solid fa-star"></i> ${scoreVal}%`;
+  }
+
+  // 4. Alerts Tracking
+  const isSub = Boolean(item.is_subscribed);
+  if (trackBtn) {
+    trackBtn.className = `btn-track-action ${isSub ? 'active-track' : ''}`;
+  }
+  if (trackText) {
+    trackText.textContent = isSub ? 'TRACKING ✓' : 'TRACK ➜';
+  }
+
+  // 5. Favorite button
+  const isFav = item.status && item.status.includes('favorite');
+  if (favBtn) {
+    favBtn.className = `btn-detail-icon ${isFav ? 'active-fav' : ''}`;
+    favBtn.innerHTML = `<i class="${isFav ? 'fa-solid' : 'fa-regular'} fa-heart"></i>`;
+  }
+
+  // 6. Characters Row
+  if (charSection && charRow) {
+    if (Array.isArray(item.characters) && item.characters.length > 0) {
+      charRow.innerHTML = item.characters.map(c => `
+        <div class="character-item">
+          <img src="${c.image || '/static/images/default_cover.svg'}" alt="${escapeHtml(c.name)}" class="character-avatar" onerror="this.src='/static/images/default_cover.svg'">
+          <span class="character-name">${escapeHtml(c.name)}</span>
+        </div>
+      `).join('');
+      charSection.style.display = 'block';
+    } else {
+      charSection.style.display = 'none';
+    }
+  }
+
+  // 7. Synopsis
+  if (synopsisEl) {
+    synopsisEl.textContent = item.synopsis || 'An epic manga story available to read on Manga Galactic.';
+  }
+
+  // 8. Admin Controls (Only if admin)
+  if (adminPanel) {
+    adminPanel.style.display = isCurrentUserAdmin ? 'block' : 'none';
+  }
+
+  // 9. Web Reader Link
+  if (readOnlineBtn) {
+    readOnlineBtn.href = `/reader?cid=${item.channel_id}&ch=${item.bookmark_chapter || 1}&user_id=${currentUserId}`;
+  }
+
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeMangaDetailModal() {
+  const modal = document.getElementById('mangaDetailModal');
+  if (modal) modal.style.display = 'none';
+  activeDetailManga = null;
+}
+
+function toggleDetailFav() {
+  if (!activeDetailManga) return;
+  const isFav = activeDetailManga.status && activeDetailManga.status.includes('favorite');
+  toggleStatus(activeDetailManga.channel_id, 'favorite', !isFav);
+
+  const favBtn = document.getElementById('detailFavBtn');
+  if (favBtn) {
+    favBtn.className = `btn-detail-icon ${!isFav ? 'active-fav' : ''}`;
+    favBtn.innerHTML = `<i class="${!isFav ? 'fa-solid' : 'fa-regular'} fa-heart"></i>`;
+  }
+}
+
+function toggleDetailSubscription() {
+  if (!activeDetailManga) return;
+  const isSub = Boolean(activeDetailManga.is_subscribed);
+  toggleSubscribe(activeDetailManga.channel_id, !isSub);
+
+  const trackBtn = document.getElementById('detailTrackBtn');
+  const trackText = document.getElementById('detailTrackText');
+  if (trackBtn) trackBtn.className = `btn-track-action ${!isSub ? 'active-track' : ''}`;
+  if (trackText) trackText.textContent = !isSub ? 'TRACKING ✓' : 'TRACK ➜';
+}
+
+function openDetailTgChannel() {
+  if (!activeDetailManga) return;
+  openTgLink(activeDetailManga.channel_link);
+}
+
+// =========================================================
+// 🛡️ Admin Vault Editing Modal Logic
+// =========================================================
+function openAdminEditModal() {
+  if (!activeDetailManga || !isCurrentUserAdmin) return;
+
+  const titleInput = document.getElementById('adminEditTitle');
+  const statusSelect = document.getElementById('adminEditStatus');
+  const scoreInput = document.getElementById('adminEditScore');
+  const chaptersInput = document.getElementById('adminEditChapters');
+  const genresInput = document.getElementById('adminEditGenres');
+  const bannerInput = document.getElementById('adminEditBanner');
+  const synopsisInput = document.getElementById('adminEditSynopsis');
+
+  if (titleInput) titleInput.value = activeDetailManga.name || '';
+  if (statusSelect) statusSelect.value = activeDetailManga.manga_status || 'Releasing';
+  if (scoreInput) scoreInput.value = activeDetailManga.score || 85;
+  if (chaptersInput) chaptersInput.value = activeDetailManga.total_chapters || '';
+  if (genresInput) {
+    const g = activeDetailManga.genres;
+    genresInput.value = Array.isArray(g) ? g.join(', ') : (g || '');
+  }
+  if (bannerInput) bannerInput.value = activeDetailManga.banner || '';
+  if (synopsisInput) synopsisInput.value = activeDetailManga.synopsis || '';
+
+  const modal = document.getElementById('adminEditModal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeAdminEditModal() {
+  const modal = document.getElementById('adminEditModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function saveAdminMangaEdit() {
+  if (!activeDetailManga || !isCurrentUserAdmin) return;
+
+  const saveBtn = document.getElementById('adminEditSaveBtn');
+  const title = document.getElementById('adminEditTitle')?.value.trim();
+  const status = document.getElementById('adminEditStatus')?.value;
+  const score = parseInt(document.getElementById('adminEditScore')?.value) || 85;
+  const chapters = parseInt(document.getElementById('adminEditChapters')?.value) || 0;
+  const genres = document.getElementById('adminEditGenres')?.value.split(',').map(g => g.trim()).filter(Boolean);
+  const banner = document.getElementById('adminEditBanner')?.value.trim() || null;
+  const synopsis = document.getElementById('adminEditSynopsis')?.value.trim();
+
+  if (saveBtn) saveBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/admin/edit_manga', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: currentUserId,
+        channel_id: activeDetailManga.channel_id,
+        name: title,
+        status: status,
+        score: score,
+        total_chapters: chapters,
+        genres: genres,
+        banner: banner,
+        synopsis: synopsis
+      })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      showToast('🛡️ Manga details saved to Vault!');
+      hapticFeedback('notification');
+
+      // Update local state
+      Object.assign(activeDetailManga, {
+        name: title,
+        manga_status: status,
+        score: score,
+        total_chapters: chapters,
+        genres: genres,
+        banner: banner,
+        synopsis: synopsis
+      });
+
+      // Refresh Detail View & Grid
+      openMangaDetailModal(activeDetailManga.channel_id);
+      filterAndRenderCatalog();
+      closeAdminEditModal();
+    } else {
+      showToast(data.error || 'Failed to save changes');
+    }
+  } catch (err) {
+    console.error('Failed to save admin edit:', err);
+    showToast('Network error saving changes');
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
 }

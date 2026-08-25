@@ -163,6 +163,12 @@ def register_web_routes(app, bot_getter=None):
             for doc in ratings_col.aggregate(pipeline)
         }
 
+        is_user_admin = False
+        if user_id:
+            from database import is_sudo
+            from config import BOT_OWNER_ID
+            is_user_admin = (user_id == BOT_OWNER_ID) or is_sudo(user_id)
+
         all_manga = get_all_manga_cached()
         catalog = []
 
@@ -178,8 +184,14 @@ def register_web_routes(app, bot_getter=None):
                 "channel_id": cid,
                 "name": name,
                 "channel_link": m.get("channel_link") or (f"https://t.me/c/{str(cid)[4:]}/1" if cid else ""),
-                "total_chapters": m.get("total_chapters"),
+                "total_chapters": m.get("total_chapters") or 0,
                 "image_url": image_url,
+                "synopsis": m.get("synopsis") or "An epic story unfolding in Manga Galactic.",
+                "genres": m.get("genres") or ["Action", "Fantasy", "Adventure"],
+                "score": m.get("score") or 88,
+                "manga_status": m.get("status") or "Releasing",
+                "banner": m.get("banner"),
+                "characters": m.get("characters") or [],
                 "status": user_status_map.get(cid, []) if user_id else [],
                 "bookmark_chapter": user_bookmarks_map.get(name.lower(), None) if user_id else None,
                 "is_bookmarked": name.lower() in user_bookmarks_map if user_id else False,
@@ -190,7 +202,75 @@ def register_web_routes(app, bot_getter=None):
             }
             catalog.append(item)
 
-        return jsonify({"success": True, "count": len(catalog), "manga": catalog})
+        return jsonify({
+            "success": True,
+            "count": len(catalog),
+            "manga": catalog,
+            "is_admin": is_user_admin
+        })
+
+    # -------------------------------------------------------------
+    # 🛡️ API: Admin Manga Edit (Admins Only)
+    # -------------------------------------------------------------
+    @app.route("/api/admin/edit_manga", methods=["POST"])
+    def api_admin_edit_manga():
+        data = request.get_json(force=True, silent=True) or {}
+        user_id_raw = data.get("user_id")
+        cid_raw = data.get("channel_id")
+
+        if not user_id_raw or not cid_raw:
+            return jsonify({"success": False, "error": "user_id and channel_id are required"}), 400
+
+        try:
+            user_id = int(user_id_raw)
+            channel_id = int(cid_raw)
+        except ValueError:
+            return jsonify({"success": False, "error": "Invalid user_id or channel_id format"}), 400
+
+        from database import is_sudo
+        from config import BOT_OWNER_ID
+        if not (user_id == BOT_OWNER_ID or is_sudo(user_id)):
+            return jsonify({"success": False, "error": "Unauthorized: Admin privileges required"}), 403
+
+        update_doc = {}
+        if "name" in data and str(data["name"]).strip():
+            update_doc["name"] = str(data["name"]).strip()
+        if "synopsis" in data:
+            update_doc["synopsis"] = str(data["synopsis"]).strip()
+        if "genres" in data:
+            genres_val = data["genres"]
+            if isinstance(genres_val, list):
+                update_doc["genres"] = [str(g).strip() for g in genres_val if str(g).strip()]
+            elif isinstance(genres_val, str):
+                update_doc["genres"] = [g.strip() for g in genres_val.split(",") if g.strip()]
+        if "score" in data and data["score"] is not None:
+            try:
+                update_doc["score"] = int(data["score"])
+            except (ValueError, TypeError):
+                pass
+        if "status" in data and str(data["status"]).strip():
+            update_doc["status"] = str(data["status"]).strip()
+        if "banner" in data:
+            update_doc["banner"] = str(data["banner"]).strip() if data["banner"] else None
+        if "total_chapters" in data and data["total_chapters"] is not None:
+            try:
+                update_doc["total_chapters"] = int(data["total_chapters"])
+            except (ValueError, TypeError):
+                pass
+
+        if not update_doc:
+            return jsonify({"success": False, "error": "No valid update fields provided"}), 400
+
+        from database import manga_col, _invalidate_manga_cache
+        manga_col.update_one({"channel_id": channel_id}, {"$set": update_doc})
+        _invalidate_manga_cache()
+
+        logger.info(f"🛡️ Admin {user_id} updated manga {channel_id}: {list(update_doc.keys())}")
+        return jsonify({
+            "success": True,
+            "message": "Manga details saved successfully!",
+            "updated": update_doc
+        })
 
     # -------------------------------------------------------------
     # 👤 API: Reader Profile & Shelves

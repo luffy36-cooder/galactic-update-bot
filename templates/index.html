@@ -135,6 +135,159 @@
     </div>
   </div>
 
+  <!-- 🌌 Manga Detail View Modal (Cyberpunk Decorated) -->
+  <div id="mangaDetailModal" class="modal-backdrop manga-detail-backdrop" style="display: none;">
+    <div class="manga-detail-sheet">
+      <!-- High-res Banner Header -->
+      <div class="detail-banner-wrap" id="detailBannerWrap">
+        <div class="detail-banner-overlay"></div>
+        <img id="detailBannerImg" src="" alt="Manga Banner" class="detail-banner-img" onerror="this.style.display='none'">
+        
+        <!-- Header Actions -->
+        <div class="detail-header-bar">
+          <span class="detail-tag-badge" id="detailMediaType"><i class="fa-solid fa-book-journal-whills"></i> MANHWA</span>
+          <div class="detail-header-actions">
+            <button class="btn-detail-icon" id="detailFavBtn" onclick="toggleDetailFav()" title="Favorite"><i class="fa-regular fa-heart"></i></button>
+            <button class="btn-detail-icon" onclick="closeMangaDetailModal()" title="Close"><i class="fa-solid fa-xmark"></i></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Body Container -->
+      <div class="detail-body-scroll">
+        <!-- Title & Cover Section -->
+        <div class="detail-main-header">
+          <div class="detail-poster-wrap">
+            <img id="detailPosterImg" src="" alt="Cover" class="detail-poster" onerror="this.src='/static/images/default_cover.svg'">
+          </div>
+          <div class="detail-title-col">
+            <h2 id="detailTitle" class="detail-title">Manga Title</h2>
+            <div id="detailGenres" class="detail-genres-row">
+              <!-- Genre pills rendered dynamically -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 3-Column Stats Grid -->
+        <div class="detail-stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">TOTAL CHAPTERS</span>
+            <span class="stat-val stat-cyan" id="detailChapters">0 Ch.</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">STATUS</span>
+            <span class="stat-val stat-green" id="detailStatus">Releasing</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">COMMUNITY RATING</span>
+            <span class="stat-val stat-gold" id="detailRating"><i class="fa-solid fa-star"></i> 85%</span>
+          </div>
+        </div>
+
+        <!-- Telegram Alert Tracker Card -->
+        <div class="detail-track-card">
+          <div class="track-info">
+            <div class="track-icon"><i class="fa-solid fa-bell"></i></div>
+            <div>
+              <div class="track-title">🔔 Track Releases on @Galactic_Update_bot</div>
+              <div class="track-desc">Get instant alerts for new chapters, save reading bookmarks & request fast uploads!</div>
+            </div>
+          </div>
+          <button class="btn-track-action" id="detailTrackBtn" onclick="toggleDetailSubscription()">
+            <i class="fa-solid fa-thumbtack"></i> <span id="detailTrackText">TRACK ➜</span>
+          </button>
+        </div>
+
+        <!-- Character Cast Row (if available) -->
+        <div class="detail-characters-section" id="detailCharactersSection" style="display: none;">
+          <h4 class="section-subheading"><i class="fa-solid fa-users"></i> MAIN CHARACTERS</h4>
+          <div class="characters-scroll-row" id="detailCharactersRow">
+            <!-- Character avatar items -->
+          </div>
+        </div>
+
+        <!-- Story Synopsis Box -->
+        <div class="detail-synopsis-section">
+          <h4 class="section-subheading"><i class="fa-solid fa-file-lines"></i> STORY SYNOPSIS</h4>
+          <div class="synopsis-content-box">
+            <p id="detailSynopsisText">Story synopsis description goes here...</p>
+          </div>
+        </div>
+
+        <!-- Admin Controls Panel (Only visible to Admins/Owner) -->
+        <div class="detail-admin-panel" id="detailAdminPanel" style="display: none;">
+          <div class="admin-panel-header">
+            <span><i class="fa-solid fa-shield-halved"></i> VAULT ADMIN CONTROLS</span>
+            <button class="btn-admin-edit-toggle" onclick="openAdminEditModal()"><i class="fa-solid fa-pen-to-square"></i> Edit Details</button>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="detail-actions-footer">
+          <a href="#" id="detailReadOnlineBtn" class="btn-primary-glow">
+            <i class="fa-solid fa-bolt"></i> READ ONLINE IN WEB READER ➜
+          </a>
+          <button id="detailReadTgBtn" class="btn-telegram-gradient" onclick="openDetailTgChannel()">
+            <i class="fa-brands fa-telegram"></i> READ CHAPTERS ON TELEGRAM ➜
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🛡️ Admin Edit Manga Modal -->
+  <div id="adminEditModal" class="modal-backdrop" style="display: none; z-index: 1050;">
+    <div class="modal-card admin-edit-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-pen-to-square"></i> Edit Manga Vault Data</h3>
+        <button class="modal-close" onclick="closeAdminEditModal()">&times;</button>
+      </div>
+      <div class="modal-body admin-edit-body">
+        <div class="input-group">
+          <label>Manga Title</label>
+          <input type="text" id="adminEditTitle" placeholder="Full Manga Title">
+        </div>
+        <div class="admin-grid-row">
+          <div class="input-group">
+            <label>Status</label>
+            <select id="adminEditStatus">
+              <option value="Releasing">Releasing</option>
+              <option value="Finished">Finished</option>
+              <option value="Ongoing">Ongoing</option>
+              <option value="Hiatus">Hiatus</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label>Score % (0-100)</label>
+            <input type="number" id="adminEditScore" min="0" max="100" placeholder="85">
+          </div>
+          <div class="input-group">
+            <label>Total Chapters</label>
+            <input type="number" id="adminEditChapters" min="0" placeholder="e.g. 150">
+          </div>
+        </div>
+        <div class="input-group">
+          <label>Genres (comma separated)</label>
+          <input type="text" id="adminEditGenres" placeholder="Action, Fantasy, Adventure, Male Protagonist">
+        </div>
+        <div class="input-group">
+          <label>Banner Image URL (Optional)</label>
+          <input type="text" id="adminEditBanner" placeholder="https://s4.anilist.co/.../banner.jpg">
+        </div>
+        <div class="input-group">
+          <label>Story Synopsis</label>
+          <textarea id="adminEditSynopsis" rows="4" placeholder="Enter complete synopsis..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeAdminEditModal()">Cancel</button>
+        <button class="btn btn-primary" id="adminEditSaveBtn" onclick="saveAdminMangaEdit()">
+          <i class="fa-solid fa-floppy-disk"></i> Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div id="toast" class="toast"></div>
 
