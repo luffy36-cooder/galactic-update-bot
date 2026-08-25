@@ -526,8 +526,16 @@ def register_web_routes(app, bot_getter=None):
     # -------------------------------------------------------------
     # 📄 API: Stream Chapter PDF directly from Telegram MTProto (Supports 20MB-2GB Files!)
     # -------------------------------------------------------------
-    @app.route("/api/chapter/file/<int(signed=True):channel_id>/<int:chapter>", methods=["GET", "HEAD"])
+    @app.route("/api/chapter/file/<int(signed=True):channel_id>/<int:chapter>", methods=["GET", "HEAD", "OPTIONS"])
     def api_get_chapter_file(channel_id, chapter):
+        if request.method == "OPTIONS":
+            resp = Response()
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+            resp.headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
+            resp.headers["Access-Control-Allow-Headers"] = "Range, Content-Type, Accept"
+            resp.headers["Access-Control-Expose-Headers"] = "Content-Range, Content-Length, Accept-Ranges"
+            return resp
+
         chap_doc = get_chapter_file(channel_id, chapter)
         manga = get_manga_by_id(channel_id) or {}
         invite_link = manga.get("channel_link") or f"https://t.me/c/{str(channel_id)[4:]}/1"
@@ -573,6 +581,9 @@ def register_web_routes(app, bot_getter=None):
                     )
                     resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
                     resp.headers["Accept-Ranges"] = "bytes"
+                    resp.headers["Access-Control-Allow-Origin"] = "*"
+                    resp.headers["Access-Control-Allow-Headers"] = "Range, Content-Type, Accept"
+                    resp.headers["Access-Control-Expose-Headers"] = "Content-Range, Content-Length, Accept-Ranges"
                     return resp
             except Exception as e:
                 logger.debug(f"MTProto direct stream fallback: {e}")
@@ -584,7 +595,18 @@ def register_web_routes(app, bot_getter=None):
             try:
                 tg_file = bot.get_file(file_id)
                 if tg_file and tg_file.file_path:
-                    return redirect(tg_file.file_path)
+                    import requests
+                    req = requests.get(tg_file.file_path, stream=True, timeout=30)
+                    if req.status_code == 200:
+                        resp = Response(
+                            req.iter_content(chunk_size=65536),
+                            content_type="application/pdf"
+                        )
+                        resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
+                        resp.headers["Access-Control-Allow-Origin"] = "*"
+                        resp.headers["Access-Control-Allow-Headers"] = "Range, Content-Type, Accept"
+                        resp.headers["Access-Control-Expose-Headers"] = "Content-Range, Content-Length, Accept-Ranges"
+                        return resp
             except Exception as e:
                 logger.debug(f"Bot API get_file fallback: {e}")
 

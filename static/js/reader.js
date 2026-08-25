@@ -196,6 +196,9 @@ function populateChapterDropdown() {
 async function loadChapterPdf() {
   showLoader(true, `Loading Chapter ${currentChapter}...`);
   renderedPages.clear();
+  if (pdfDoc) {
+    try { pdfDoc.destroy(); } catch (e) {}
+  }
   pdfDoc = null;
 
   const select = document.getElementById('chapterSelect');
@@ -208,9 +211,11 @@ async function loadChapterPdf() {
       url: pdfUrl,
       cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
       cMapPacked: true,
-      rangeChunkSize: 65536, // 64KB HTTP Range chunk stream for ultra-fast first-frame load!
-      disableAutoFetch: true,
-      disableStream: false
+      rangeChunkSize: 262144, // 256KB chunk stream for fast reliable buffering across all networks!
+      disableAutoFetch: false,
+      disableStream: false,
+      isEvalSupported: false,
+      useSystemFonts: true
     });
 
     loadingTask.onProgress = (progress) => {

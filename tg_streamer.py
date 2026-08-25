@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache", "pdfs")
 SESSION_DIR = os.path.join(os.path.dirname(__file__), "cache", "session")
+os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(SESSION_DIR, exist_ok=True)
 SESSION_FILE = os.path.join(SESSION_DIR, "galactic_streamer")
 
@@ -22,6 +23,8 @@ class MTProtoStreamer:
         self.loop = None
         self.client = None
         self.ready_event = threading.Event()
+        self._download_locks = {}
+        self._lock_mutex = threading.Lock()
         self.thread = threading.Thread(target=self._worker, daemon=True, name="MTProtoStreamerWorker")
         self.thread.start()
         self.ready_event.wait(timeout=10)
@@ -46,21 +49,51 @@ class MTProtoStreamer:
         self.loop.run_forever()
 
     def get_or_download_pdf(self, channel_id: int, msg_id: int) -> str:
-        """Downloads and caches the PDF on disk, returning file path for instant HTTP Range requests."""
+        """Downloads and caches the PDF on disk with thread-safe de-duplication, returning file path."""
+        os.makedirs(CACHE_DIR, exist_ok=True)
         cache_path = os.path.join(CACHE_DIR, f"{channel_id}_{msg_id}.pdf")
         if os.path.exists(cache_path) and os.path.getsize(cache_path) > 5000:
             return cache_path
 
-        async def _download():
-            msg = await self.client.get_messages(channel_id, ids=msg_id)
-            if msg and msg.document:
-                await self.client.download_media(msg.document, file=cache_path)
+        lock_key = f"{channel_id}_{msg_id}"
+        with self._lock_mutex:
+            if lock_key not in self._download_locks:
+                self._download_locks[lock_key] = threading.Event()
+                is_initiator = True
             else:
-                logger.warning(f"No document found on msg_id {msg_id} in channel {channel_id}")
+                is_initiator = False
+                wait_event = self._download_locks[lock_key]
 
-        if self.loop and self.loop.is_running():
-            fut = asyncio.run_coroutine_threadsafe(_download(), self.loop)
-            fut.result(timeout=45)
+        if not is_initiator:
+            wait_event.wait(timeout=45)
+            if os.path.exists(cache_path) and os.path.getsize(cache_path) > 5000:
+                return cache_path
+            return None
+
+        try:
+            async def _download():
+                try:
+                    msg = await self.client.get_messages(channel_id, ids=msg_id)
+                    if msg and msg.document:
+                        temp_path = f"{cache_path}.tmp"
+                        await self.client.download_media(msg.document, file=temp_path)
+                        if os.path.exists(temp_path) and os.path.getsize(temp_path) > 5000:
+                            if os.path.exists(cache_path):
+                                os.remove(cache_path)
+                            os.rename(temp_path, cache_path)
+                    else:
+                        logger.warning(f"No document found on msg_id {msg_id} in channel {channel_id}")
+                except Exception as e:
+                    logger.error(f"Download error on {channel_id}:{msg_id} -> {e}")
+
+            if self.loop and self.loop.is_running():
+                fut = asyncio.run_coroutine_threadsafe(_download(), self.loop)
+                fut.result(timeout=45)
+        finally:
+            with self._lock_mutex:
+                ev = self._download_locks.pop(lock_key, None)
+                if ev:
+                    ev.set()
 
         if os.path.exists(cache_path) and os.path.getsize(cache_path) > 5000:
             return cache_path
