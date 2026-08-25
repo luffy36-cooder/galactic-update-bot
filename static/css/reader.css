@@ -40,6 +40,26 @@
   transform: translateY(-100%);
 }
 
+/* 🌌 Immersive Zen Fullscreen Mode (100% Pure Manhwa, Zero UI) */
+body.zen-immersive-mode .reader-navbar {
+  transform: translateY(-100%) !important;
+  pointer-events: none;
+}
+
+body.zen-immersive-mode .reader-footer {
+  transform: translateY(100%) !important;
+  pointer-events: none;
+}
+
+body.zen-immersive-mode .reader-viewport {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+body.zen-immersive-mode .webtoon-page-wrapper {
+  margin: 0 auto;
+}
+
 .reader-nav-left {
   display: flex;
   align-items: center;

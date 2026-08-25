@@ -8,6 +8,9 @@ const tg = window.Telegram?.WebApp;
 if (tg) {
   tg.ready();
   tg.expand();
+  if (tg.disableVerticalSwipes) {
+    try { tg.disableVerticalSwipes(); } catch (e) {}
+  }
   if (tg.requestFullscreen) {
     try { tg.requestFullscreen(); } catch (e) {}
   }
@@ -121,20 +124,14 @@ function setupEventListeners() {
   document.getElementById('btnQuickBookmark').addEventListener('click', triggerManualBookmark);
 
   // Fullscreen Button
-  document.getElementById('btnFullscreen').addEventListener('click', toggleFullscreen);
+  document.getElementById('btnFullscreen').addEventListener('click', () => toggleImmersiveZenMode());
 
   // Page Flip Tap Zones
   document.getElementById('tapLeft').addEventListener('click', () => changeFlipPage(-1));
   document.getElementById('tapRight').addEventListener('click', () => changeFlipPage(1));
 
-  // Tap Webtoon Viewport to Toggle Toolbars (Immersive Mode)
-  const webtoonView = document.getElementById('webtoonContainer');
-  if (webtoonView) {
-    webtoonView.addEventListener('click', () => {
-      document.getElementById('readerNavbar')?.classList.toggle('hidden');
-      document.getElementById('readerFooter')?.classList.toggle('hidden');
-    });
-  }
+  // Tap & Double-Tap detection for 100% pure Manhwa Immersive Mode
+  setupImmersiveTapHandlers();
 
   // Auto-hide toolbar on scroll
   window.addEventListener('scroll', handleToolbarScroll, { passive: true });
@@ -151,7 +148,7 @@ function setupEventListeners() {
     } else if (e.key === 'w' || e.key === 'W') {
       cycleReaderWidth();
     } else if (e.key === 'f' || e.key === 'F') {
-      toggleFullscreen();
+      toggleImmersiveZenMode();
     } else if (e.key === 'b' || e.key === 'B') {
       triggerManualBookmark();
     } else if (e.key === 'm' || e.key === 'M') {
@@ -581,22 +578,109 @@ function handleToolbarScroll() {
   lastScrollTop = st <= 0 ? 0 : st;
 }
 
-function toggleFullscreen() {
-  if (window.Telegram?.WebApp?.requestFullscreen) {
-    try {
-      if (window.Telegram.WebApp.isFullscreen) {
-        window.Telegram.WebApp.exitFullscreen();
-      } else {
-        window.Telegram.WebApp.requestFullscreen();
-      }
-    } catch (e) {}
+let isImmersiveMode = false;
+let touchStartX = 0;
+let touchStartY = 0;
+let touchStartTime = 0;
+
+function toggleImmersiveZenMode(forceState = null) {
+  if (forceState !== null) {
+    isImmersiveMode = forceState;
+  } else {
+    isImmersiveMode = !isImmersiveMode;
   }
 
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(() => {});
+  hapticFeedback('selection');
+
+  const navbar = document.getElementById('readerNavbar');
+  const footer = document.getElementById('readerFooter');
+  const body = document.body;
+
+  if (isImmersiveMode) {
+    // 🌌 Enter True Immersive Zen Mode (Hide all bars & phone status bar)
+    navbar?.classList.add('hidden');
+    footer?.classList.add('hidden');
+    body.classList.add('zen-immersive-mode');
+
+    // 1. Telegram Fullscreen SDK (Hides Telegram close bar + Android status bar)
+    if (window.Telegram?.WebApp?.requestFullscreen) {
+      try {
+        window.Telegram.WebApp.requestFullscreen();
+      } catch (e) {}
+    }
+
+    // 2. HTML5 System Fullscreen (Hides Android navigation buttons)
+    if (!document.fullscreenElement) {
+      try {
+        if (document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        } else if (document.documentElement.webkitRequestFullscreen) {
+          document.documentElement.webkitRequestFullscreen();
+        }
+      } catch (e) {}
+    }
+
+    showToast('🌌 Pure Manhwa Mode (Tap to show controls)');
   } else {
-    document.exitFullscreen().catch(() => {});
+    // ☀️ Restore toolbars & Telegram controls
+    navbar?.classList.remove('hidden');
+    footer?.classList.remove('hidden');
+    body.classList.remove('zen-immersive-mode');
+
+    if (window.Telegram?.WebApp?.exitFullscreen && window.Telegram.WebApp.isFullscreen) {
+      try {
+        window.Telegram.WebApp.exitFullscreen();
+      } catch (e) {}
+    }
+
+    if (document.fullscreenElement && document.exitFullscreen) {
+      try {
+        document.exitFullscreen().catch(() => {});
+      } catch (e) {}
+    }
   }
+}
+
+function setupImmersiveTapHandlers() {
+  const viewport = document.getElementById('readerViewport');
+  if (!viewport) return;
+
+  // Touch handling on mobile: Detect clean tap vs scroll
+  viewport.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchStartTime = Date.now();
+    }
+  }, { passive: true });
+
+  viewport.addEventListener('touchend', (e) => {
+    // Ignore interactive UI components
+    if (e.target.closest('button, input, select, textarea, .comment-card-item, .reaction-pill-btn, .modal-card, .social-box-header, .comment-input-wrap, a, .chapter-reactions-box, .chapter-comments-box')) {
+      return;
+    }
+
+    if (e.changedTouches.length === 1) {
+      const deltaX = Math.abs(e.changedTouches[0].clientX - touchStartX);
+      const deltaY = Math.abs(e.changedTouches[0].clientY - touchStartY);
+      const duration = Date.now() - touchStartTime;
+
+      // Clean tap without significant drag/scroll
+      if (deltaX < 14 && deltaY < 14 && duration < 320) {
+        toggleImmersiveZenMode();
+      }
+    }
+  });
+
+  // Desktop click handler on canvas/viewport
+  viewport.addEventListener('click', (e) => {
+    if (e.target.closest('button, input, select, textarea, .comment-card-item, .reaction-pill-btn, .modal-card, .social-box-header, .comment-input-wrap, a, .chapter-reactions-box, .chapter-comments-box')) {
+      return;
+    }
+    if (e.target.closest('.webtoon-page-wrapper, .webtoon-scroll-view, #pageFlipContainer, #flipCanvas')) {
+      toggleImmersiveZenMode();
+    }
+  });
 }
 
 function showToast(msg) {
