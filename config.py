@@ -4,8 +4,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _env_token = os.getenv("BOT_TOKEN", "")
-if not _env_token or "AAGPWuctdrTPe0WS" in _env_token:
-    BOT_TOKEN = "7225497293:AAGuFy9LubvOMG0SKgWVsbb-eLSUYxnZcY4"
+if not _env_token or "AAGPWuctdrTPe0WS" in _env_token or "AAGuFy9LubvOMG0SKgWVsbb" in _env_token:
+    BOT_TOKEN = "7225497293:AAFBaCtHW_oHjt_HQ1_ELM2eUqD0SoWDdNU"
 else:
     BOT_TOKEN = _env_token
 API_ID = int(os.getenv("API_ID", "26630701"))
