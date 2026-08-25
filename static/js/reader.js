@@ -241,8 +241,16 @@ async function loadChapterPdf() {
     syncProgressBookmark();
     prefetchNextChapter();
 
+    // Show and load social reactions & discussion
+    const socialSec = document.getElementById('chapterSocialSection');
+    if (socialSec) socialSec.style.display = 'flex';
+    loadChapterReactions();
+    loadChapterComments();
+
   } catch (err) {
     console.error('PDF load error:', err);
+    const socialSec = document.getElementById('chapterSocialSection');
+    if (socialSec) socialSec.style.display = 'none';
     try {
       const errRes = await fetch(pdfUrl);
       const errData = await errRes.json();
@@ -608,3 +616,248 @@ function hapticFeedback(type = 'impact') {
     }
   } catch (e) {}
 }
+
+// =========================================================
+// 🔥 Chapter Reactions & 💬 Discussion Logic
+// =========================================================
+let currentChapterReactions = { fire: 0, shock: 0, heart: 0, crown: 0, total: 0, user_reaction: null };
+
+async function loadChapterReactions() {
+  if (!channelId || !currentChapter) return;
+  try {
+    const res = await fetch(`/api/chapter/reactions?cid=${channelId}&ch=${currentChapter}&user_id=${currentUserId}`);
+    const data = await res.json();
+    if (data.success && data.reactions) {
+      currentChapterReactions = data.reactions;
+      renderReactionsUI();
+    }
+  } catch (err) {
+    console.error('Failed to load reactions:', err);
+  }
+}
+
+function renderReactionsUI() {
+  const r = currentChapterReactions;
+  const fireEl = document.getElementById('reactCountFire');
+  const shockEl = document.getElementById('reactCountShock');
+  const heartEl = document.getElementById('reactCountHeart');
+  const crownEl = document.getElementById('reactCountCrown');
+  const totalEl = document.getElementById('reactTotalCount');
+
+  if (fireEl) fireEl.textContent = r.fire || 0;
+  if (shockEl) shockEl.textContent = r.shock || 0;
+  if (heartEl) heartEl.textContent = r.heart || 0;
+  if (crownEl) crownEl.textContent = r.crown || 0;
+  if (totalEl) totalEl.textContent = `${r.total || 0} Reactions`;
+
+  ['fire', 'shock', 'heart', 'crown'].forEach(type => {
+    const btn = document.getElementById(`reactBtn_${type}`);
+    if (btn) {
+      if (r.user_reaction === type) {
+        btn.classList.add('active-reaction');
+      } else {
+        btn.classList.remove('active-reaction');
+      }
+    }
+  });
+}
+
+async function handleReaction(reactionType) {
+  if (!channelId || !currentChapter) return;
+  hapticFeedback('notification');
+
+  const btn = document.getElementById(`reactBtn_${reactionType}`);
+  if (btn) {
+    const rect = btn.getBoundingClientRect();
+    const emojiMap = { fire: '🔥', shock: '😱', heart: '❤️', crown: '👑' };
+    showFloatingConfetti(emojiMap[reactionType] || '🔥', rect.left + rect.width / 2, rect.top);
+  }
+
+  // Optimistic UI update
+  const prevUserReact = currentChapterReactions.user_reaction;
+  if (prevUserReact === reactionType) {
+    currentChapterReactions.user_reaction = null;
+    currentChapterReactions[reactionType] = Math.max(0, (currentChapterReactions[reactionType] || 1) - 1);
+    currentChapterReactions.total = Math.max(0, (currentChapterReactions.total || 1) - 1);
+  } else {
+    if (prevUserReact && currentChapterReactions[prevUserReact]) {
+      currentChapterReactions[prevUserReact] = Math.max(0, currentChapterReactions[prevUserReact] - 1);
+    } else {
+      currentChapterReactions.total = (currentChapterReactions.total || 0) + 1;
+    }
+    currentChapterReactions.user_reaction = reactionType;
+    currentChapterReactions[reactionType] = (currentChapterReactions[reactionType] || 0) + 1;
+  }
+  renderReactionsUI();
+
+  try {
+    const res = await fetch('/api/chapter/reaction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channel_id: channelId,
+        chapter: currentChapter,
+        user_id: currentUserId,
+        reaction: reactionType
+      })
+    });
+    const data = await res.json();
+    if (data.success && data.reactions) {
+      currentChapterReactions = data.reactions;
+      renderReactionsUI();
+    }
+  } catch (err) {
+    console.error('Failed to toggle reaction:', err);
+  }
+}
+
+function showFloatingConfetti(emoji, startX, startY) {
+  for (let i = 0; i < 4; i++) {
+    const el = document.createElement('div');
+    el.className = 'floating-reaction-emoji';
+    el.textContent = emoji;
+    const randomOffsetX = (Math.random() - 0.5) * 60;
+    const randomOffsetY = (Math.random() - 0.5) * 20;
+    el.style.left = `${startX + randomOffsetX}px`;
+    el.style.top = `${startY + randomOffsetY}px`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1200);
+  }
+}
+
+// -------------------------------------------------------------
+// 💬 Chapter Comments Logic
+// -------------------------------------------------------------
+async function loadChapterComments() {
+  if (!channelId || !currentChapter) return;
+  const countEl = document.getElementById('commentsHeaderCount');
+
+  try {
+    const res = await fetch(`/api/chapter/comments?cid=${channelId}&ch=${currentChapter}&user_id=${currentUserId}`);
+    const data = await res.json();
+
+    if (data.success) {
+      if (countEl) countEl.textContent = `(${data.count || 0})`;
+      renderCommentsList(data.comments || []);
+    }
+  } catch (err) {
+    console.error('Failed to load comments:', err);
+  }
+}
+
+function renderCommentsList(comments) {
+  const feed = document.getElementById('commentsFeedList');
+  if (!feed) return;
+
+  if (!comments || comments.length === 0) {
+    feed.innerHTML = `
+      <div class="comments-empty-state" id="commentsEmptyState">
+        <i class="fa-regular fa-comment-dots"></i>
+        <p>No comments yet. Be the first to start the discussion!</p>
+      </div>
+    `;
+    return;
+  }
+
+  feed.innerHTML = comments.map(c => `
+    <div class="comment-card-item" id="comment_${c.id}">
+      <div class="comment-author-row">
+        <span class="comment-author-name">👤 ${escapeHtml(c.user_name)}</span>
+        <span class="comment-time-ago">${formatTimeAgo(c.created_at)}</span>
+      </div>
+      <div class="comment-body-text">${escapeHtml(c.text)}</div>
+      <div class="comment-actions-bar">
+        <button class="btn-comment-like ${c.is_liked ? 'active-like' : ''}" onclick="handleCommentLike('${c.id}')">
+          <i class="fa-solid fa-thumbs-up"></i> <span id="likeCount_${c.id}">${c.likes_count || 0}</span>
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function submitChapterComment() {
+  const input = document.getElementById('commentTextInput');
+  const submitBtn = document.getElementById('commentSubmitBtn');
+  if (!input) return;
+
+  const text = input.value.trim();
+  if (!text) return;
+
+  const userName = tg?.initDataUnsafe?.user?.first_name || localStorage.getItem('galactic_user_name') || 'Reader';
+
+  if (submitBtn) submitBtn.disabled = true;
+  hapticFeedback('impact');
+
+  try {
+    const res = await fetch('/api/chapter/comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channel_id: channelId,
+        chapter: currentChapter,
+        user_id: currentUserId,
+        user_name: userName,
+        text: text
+      })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      input.value = '';
+      showToast('💬 Comment posted!');
+      loadChapterComments();
+    } else {
+      showToast(data.error || 'Failed to post comment');
+    }
+  } catch (err) {
+    console.error('Failed to submit comment:', err);
+    showToast('Failed to post comment');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+async function handleCommentLike(commentId) {
+  hapticFeedback('selection');
+  try {
+    const res = await fetch('/api/chapter/comment/like', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        comment_id: commentId,
+        user_id: currentUserId
+      })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      const countSpan = document.getElementById(`likeCount_${commentId}`);
+      if (countSpan) countSpan.textContent = data.likes_count;
+      const btn = countSpan?.closest('.btn-comment-like');
+      if (btn) {
+        if (data.is_liked) btn.classList.add('active-like');
+        else btn.classList.remove('active-like');
+      }
+    }
+  } catch (err) {
+    console.error('Failed to like comment:', err);
+  }
+}
+
+function formatTimeAgo(timestamp) {
+  if (!timestamp) return 'recently';
+  const sec = Math.floor(Date.now() / 1000 - timestamp);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  return `${days}d ago`;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+

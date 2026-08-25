@@ -27,6 +27,8 @@ broadcast_log_col = db["broadcast_log"]
 ratings_col = db["manga_ratings"]
 subscriptions_col = db["manga_subscriptions"]
 chapter_files_col = db["chapter_files"]
+chapter_reactions_col = db["chapter_reactions"]
+chapter_comments_col = db["chapter_comments"]
 
 
 # ==========================================
@@ -745,3 +747,155 @@ def auto_sync_all_chapters():
         logger.info(f"✅ Auto-synced total_chapters for {updated_count} manga titles in MongoDB!")
 
     return updated_count
+
+
+# =========================================================
+# 🔥 Chapter Reactions System (🔥 😱 ❤️ 👑)
+# =========================================================
+VALID_REACTIONS = {"fire", "shock", "heart", "crown"}
+
+def get_chapter_reactions(channel_id: int, chapter: int, user_id: int = None) -> dict:
+    """Returns reaction counts and the current user's reaction."""
+    counts = {"fire": 0, "shock": 0, "heart": 0, "crown": 0, "total": 0, "user_reaction": None}
+    try:
+        pipeline = [
+            {"$match": {"channel_id": int(channel_id), "chapter": int(chapter)}},
+            {"$group": {"_id": "$reaction", "count": {"$sum": 1}}}
+        ]
+        for item in chapter_reactions_col.aggregate(pipeline):
+            r_name = item["_id"]
+            if r_name in counts:
+                counts[r_name] = item["count"]
+                counts["total"] += item["count"]
+
+        if user_id:
+            user_doc = chapter_reactions_col.find_one({
+                "channel_id": int(channel_id),
+                "chapter": int(chapter),
+                "user_id": int(user_id)
+            })
+            if user_doc:
+                counts["user_reaction"] = user_doc.get("reaction")
+    except Exception as e:
+        logger.error(f"Error fetching chapter reactions: {e}")
+
+    return counts
+
+
+def toggle_chapter_reaction(channel_id: int, chapter: int, user_id: int, reaction: str) -> dict:
+    """Toggles or changes a user's reaction for a chapter."""
+    if reaction not in VALID_REACTIONS:
+        return get_chapter_reactions(channel_id, chapter, user_id)
+
+    try:
+        existing = chapter_reactions_col.find_one({
+            "channel_id": int(channel_id),
+            "chapter": int(chapter),
+            "user_id": int(user_id)
+        })
+
+        if existing and existing.get("reaction") == reaction:
+            # Tap same reaction again -> Remove it (toggle off)
+            chapter_reactions_col.delete_one({"_id": existing["_id"]})
+        else:
+            # Insert or switch reaction
+            chapter_reactions_col.update_one(
+                {"channel_id": int(channel_id), "chapter": int(chapter), "user_id": int(user_id)},
+                {"$set": {"reaction": reaction, "updated_at": time.time()}},
+                upsert=True
+            )
+    except Exception as e:
+        logger.error(f"Error toggling chapter reaction: {e}")
+
+    return get_chapter_reactions(channel_id, chapter, user_id)
+
+
+# =========================================================
+# 💬 Chapter Community Comments System
+# =========================================================
+def get_chapter_comments(channel_id: int, chapter: int, user_id: int = None, limit: int = 40) -> list:
+    """Fetches formatted comments for a specific chapter."""
+    comments = []
+    try:
+        cursor = chapter_comments_col.find({
+            "channel_id": int(channel_id),
+            "chapter": int(chapter)
+        }).sort("created_at", -1).limit(limit)
+
+        for doc in cursor:
+            likes_list = doc.get("likes", [])
+            is_liked = bool(user_id and user_id in likes_list)
+            comments.append({
+                "id": str(doc["_id"]),
+                "user_id": doc.get("user_id"),
+                "user_name": doc.get("user_name", "Anonymous Reader"),
+                "text": doc.get("text", ""),
+                "created_at": doc.get("created_at", time.time()),
+                "likes_count": len(likes_list),
+                "is_liked": is_liked
+            })
+    except Exception as e:
+        logger.error(f"Error fetching chapter comments: {e}")
+
+    return comments
+
+
+def add_chapter_comment(channel_id: int, chapter: int, user_id: int, user_name: str, text: str) -> dict:
+    """Adds a new comment to a chapter."""
+    clean_text = text.strip()[:600]
+    if not clean_text:
+        return None
+
+    clean_name = (user_name or "Reader").strip()[:50]
+    now = time.time()
+
+    doc = {
+        "channel_id": int(channel_id),
+        "chapter": int(chapter),
+        "user_id": int(user_id),
+        "user_name": clean_name,
+        "text": clean_text,
+        "created_at": now,
+        "likes": []
+    }
+
+    try:
+        res = chapter_comments_col.insert_one(doc)
+        return {
+            "id": str(res.inserted_id),
+            "user_id": int(user_id),
+            "user_name": clean_name,
+            "text": clean_text,
+            "created_at": now,
+            "likes_count": 0,
+            "is_liked": False
+        }
+    except Exception as e:
+        logger.error(f"Error adding chapter comment: {e}")
+        return None
+
+
+def toggle_comment_like(comment_id_str: str, user_id: int) -> dict:
+    """Toggles like on a comment."""
+    from bson.objectid import ObjectId
+    try:
+        obj_id = ObjectId(comment_id_str)
+        doc = chapter_comments_col.find_one({"_id": obj_id})
+        if not doc:
+            return {"success": False, "error": "Comment not found"}
+
+        likes_list = doc.get("likes", [])
+        if user_id in likes_list:
+            chapter_comments_col.update_one({"_id": obj_id}, {"$pull": {"likes": int(user_id)}})
+            is_liked = False
+            new_count = max(0, len(likes_list) - 1)
+        else:
+            chapter_comments_col.update_one({"_id": obj_id}, {"$addToSet": {"likes": int(user_id)}})
+            is_liked = True
+            new_count = len(likes_list) + 1
+
+        return {"success": True, "likes_count": new_count, "is_liked": is_liked}
+    except Exception as e:
+        logger.error(f"Error toggling comment like: {e}")
+        return {"success": False, "error": str(e)}
+

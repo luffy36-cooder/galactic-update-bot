@@ -590,3 +590,116 @@ def register_web_routes(app, bot_getter=None):
             "error": "This chapter is available directly in the Telegram channel.",
             "channel_link": direct_post_link
         }), 502
+
+    # -------------------------------------------------------------
+    # 🔥 API: Chapter Reactions (🔥 😱 ❤️ 👑)
+    # -------------------------------------------------------------
+    @app.route("/api/chapter/reactions", methods=["GET"])
+    def api_get_chapter_reactions():
+        cid_raw = request.args.get("channel_id") or request.args.get("cid")
+        ch_raw = request.args.get("chapter") or request.args.get("ch")
+        user_id_raw = request.args.get("user_id")
+
+        if not cid_raw or not ch_raw:
+            return jsonify({"success": False, "error": "channel_id and chapter are required"}), 400
+
+        try:
+            cid = int(cid_raw)
+            ch = int(ch_raw)
+            user_id = int(user_id_raw) if user_id_raw and user_id_raw.isdigit() else None
+        except ValueError:
+            return jsonify({"success": False, "error": "Invalid channel_id or chapter format"}), 400
+
+        from database import get_chapter_reactions
+        reactions = get_chapter_reactions(cid, ch, user_id)
+        return jsonify({"success": True, "reactions": reactions})
+
+    @app.route("/api/chapter/reaction", methods=["POST"])
+    def api_toggle_chapter_reaction():
+        data = request.get_json(force=True, silent=True) or {}
+        cid_raw = data.get("channel_id") or data.get("cid")
+        ch_raw = data.get("chapter") or data.get("ch")
+        user_id_raw = data.get("user_id")
+        reaction = str(data.get("reaction", "")).strip().lower()
+
+        if not cid_raw or not ch_raw or not user_id_raw or not reaction:
+            return jsonify({"success": False, "error": "channel_id, chapter, user_id, and reaction are required"}), 400
+
+        try:
+            cid = int(cid_raw)
+            ch = int(ch_raw)
+            user_id = int(user_id_raw)
+        except ValueError:
+            return jsonify({"success": False, "error": "Invalid ID formats"}), 400
+
+        from database import toggle_chapter_reaction
+        reactions = toggle_chapter_reaction(cid, ch, user_id, reaction)
+        return jsonify({"success": True, "reactions": reactions})
+
+    # -------------------------------------------------------------
+    # 💬 API: Chapter Community Comments & Likes
+    # -------------------------------------------------------------
+    @app.route("/api/chapter/comments", methods=["GET"])
+    def api_get_chapter_comments():
+        cid_raw = request.args.get("channel_id") or request.args.get("cid")
+        ch_raw = request.args.get("chapter") or request.args.get("ch")
+        user_id_raw = request.args.get("user_id")
+
+        if not cid_raw or not ch_raw:
+            return jsonify({"success": False, "error": "channel_id and chapter are required"}), 400
+
+        try:
+            cid = int(cid_raw)
+            ch = int(ch_raw)
+            user_id = int(user_id_raw) if user_id_raw and user_id_raw.isdigit() else None
+        except ValueError:
+            return jsonify({"success": False, "error": "Invalid format"}), 400
+
+        from database import get_chapter_comments
+        comments = get_chapter_comments(cid, ch, user_id)
+        return jsonify({"success": True, "count": len(comments), "comments": comments})
+
+    @app.route("/api/chapter/comment", methods=["POST"])
+    def api_add_chapter_comment():
+        data = request.get_json(force=True, silent=True) or {}
+        cid_raw = data.get("channel_id") or data.get("cid")
+        ch_raw = data.get("chapter") or data.get("ch")
+        user_id_raw = data.get("user_id")
+        user_name = str(data.get("user_name", "Reader")).strip()
+        text = str(data.get("text", "")).strip()
+
+        if not cid_raw or not ch_raw or not user_id_raw or not text:
+            return jsonify({"success": False, "error": "channel_id, chapter, user_id, and text are required"}), 400
+
+        try:
+            cid = int(cid_raw)
+            ch = int(ch_raw)
+            user_id = int(user_id_raw)
+        except ValueError:
+            return jsonify({"success": False, "error": "Invalid format"}), 400
+
+        from database import add_chapter_comment
+        new_comment = add_chapter_comment(cid, ch, user_id, user_name, text)
+        if not new_comment:
+            return jsonify({"success": False, "error": "Failed to post comment"}), 400
+
+        return jsonify({"success": True, "comment": new_comment})
+
+    @app.route("/api/chapter/comment/like", methods=["POST"])
+    def api_like_chapter_comment():
+        data = request.get_json(force=True, silent=True) or {}
+        comment_id = str(data.get("comment_id", "")).strip()
+        user_id_raw = data.get("user_id")
+
+        if not comment_id or not user_id_raw:
+            return jsonify({"success": False, "error": "comment_id and user_id are required"}), 400
+
+        try:
+            user_id = int(user_id_raw)
+        except ValueError:
+            return jsonify({"success": False, "error": "Invalid user_id"}), 400
+
+        from database import toggle_comment_like
+        res = toggle_comment_like(comment_id, user_id)
+        return jsonify(res)
+

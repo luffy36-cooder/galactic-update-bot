@@ -84,6 +84,64 @@
       <div class="tap-zone tap-left" id="tapLeft"></div>
       <div class="tap-zone tap-right" id="tapRight"></div>
     </div>
+
+    <!-- 🔥 Chapter Reactions & 💬 Community Discussion Section -->
+    <div id="chapterSocialSection" class="chapter-social-container" style="display:none;">
+      <!-- Reactions Bar -->
+      <div class="chapter-reactions-box">
+        <div class="social-box-header">
+          <span class="social-header-title"><i class="fa-solid fa-fire-flame-curved"></i> CHAPTER VIBES</span>
+          <span class="reactions-total-badge" id="reactTotalCount">0 Reactions</span>
+        </div>
+        <div class="reactions-btn-grid">
+          <button class="reaction-pill-btn" id="reactBtn_fire" onclick="handleReaction('fire')" title="Fire / Epic">
+            <span class="reaction-emoji">🔥</span>
+            <span class="reaction-label">Fire</span>
+            <span class="reaction-counter" id="reactCountFire">0</span>
+          </button>
+          <button class="reaction-pill-btn" id="reactBtn_shock" onclick="handleReaction('shock')" title="Shocked / Plot Twist">
+            <span class="reaction-emoji">😱</span>
+            <span class="reaction-label">Shock</span>
+            <span class="reaction-counter" id="reactCountShock">0</span>
+          </button>
+          <button class="reaction-pill-btn" id="reactBtn_heart" onclick="handleReaction('heart')" title="Love / Peak Fiction">
+            <span class="reaction-emoji">❤️</span>
+            <span class="reaction-label">Love</span>
+            <span class="reaction-counter" id="reactCountHeart">0</span>
+          </button>
+          <button class="reaction-pill-btn" id="reactBtn_crown" onclick="handleReaction('crown')" title="GOAT / Peak">
+            <span class="reaction-emoji">👑</span>
+            <span class="reaction-label">GOAT</span>
+            <span class="reaction-counter" id="reactCountCrown">0</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Comments Discussion Drawer -->
+      <div class="chapter-comments-box">
+        <div class="social-box-header">
+          <span class="social-header-title"><i class="fa-solid fa-comments"></i> DISCUSSION <span id="commentsHeaderCount">(0)</span></span>
+        </div>
+
+        <!-- Comment Input Box -->
+        <div class="comment-input-wrap">
+          <div class="comment-input-box">
+            <input type="text" id="commentTextInput" placeholder="Drop a thought on this chapter..." maxlength="500" autocomplete="off">
+            <button id="commentSubmitBtn" class="btn-send-comment" onclick="submitChapterComment()" title="Post Comment">
+              <i class="fa-solid fa-paper-plane"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Comments Feed -->
+        <div class="comments-feed-list" id="commentsFeedList">
+          <div class="comments-empty-state" id="commentsEmptyState">
+            <i class="fa-regular fa-comment-dots"></i>
+            <p>No comments yet. Be the first to start the discussion!</p>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
 
   <!-- Bottom Floating Navigation Bar -->
