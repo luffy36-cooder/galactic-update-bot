@@ -11,7 +11,8 @@ from database import (
     is_sudo,
     add_sudo,
     remove_sudo,
-    get_all_sudo
+    get_all_sudo,
+    ratings_col
 )
 from config import BOT_OWNER_ID
 
@@ -477,17 +478,21 @@ def send_users_page(update, context: CallbackContext, page: int):
             name = doc.get("full_name") or doc.get("first_name") or "User"
             username = doc.get("username")
         else:
-            try:
-                chat = context.bot.get_chat(uid)
-                if chat:
-                    name = chat.full_name or chat.first_name or "User"
-                    username = chat.username
-                    save_bot_user(uid, chat.first_name, chat.last_name, chat.username)
-            except Exception:
-                name = f"User {uid}"
+            r_doc = ratings_col.find_one({"user_id": uid})
+            if r_doc and r_doc.get("user_name"):
+                name = r_doc["user_name"]
+            else:
+                try:
+                    chat = context.bot.get_chat(uid)
+                    if chat:
+                        name = chat.full_name or chat.first_name or "User"
+                        username = chat.username
+                        save_bot_user(uid, chat.first_name, chat.last_name, chat.username)
+                except Exception:
+                    name = f"User {uid}"
 
         uname_str = f"@{username}" if username else "<i>No Username</i>"
-        safe_name = html.escape(name)
+        safe_name = html.escape(str(name))
         text += (
             f"<b>{idx}.</b> 👤 <b>{safe_name}</b>\n"
             f"   • 🏷️ <b>Username:</b> {uname_str}\n"
