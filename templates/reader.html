@@ -99,11 +99,6 @@
             <span class="reaction-label">Fire</span>
             <span class="reaction-counter" id="reactCountFire">0</span>
           </button>
-          <button class="reaction-pill-btn" id="reactBtn_shock" onclick="handleReaction('shock')" title="Shocked / Plot Twist">
-            <span class="reaction-emoji">😱</span>
-            <span class="reaction-label">Shock</span>
-            <span class="reaction-counter" id="reactCountShock">0</span>
-          </button>
           <button class="reaction-pill-btn" id="reactBtn_heart" onclick="handleReaction('heart')" title="Love / Peak Fiction">
             <span class="reaction-emoji">❤️</span>
             <span class="reaction-label">Love</span>
@@ -113,6 +108,31 @@
             <span class="reaction-emoji">👑</span>
             <span class="reaction-label">GOAT</span>
             <span class="reaction-counter" id="reactCountCrown">0</span>
+          </button>
+          <button class="reaction-pill-btn" id="reactBtn_shock" onclick="handleReaction('shock')" title="Shocked / Plot Twist">
+            <span class="reaction-emoji">😱</span>
+            <span class="reaction-label">Shock</span>
+            <span class="reaction-counter" id="reactCountShock">0</span>
+          </button>
+          <button class="reaction-pill-btn" id="reactBtn_laugh" onclick="handleReaction('laugh')" title="Funny / LOL">
+            <span class="reaction-emoji">😂</span>
+            <span class="reaction-label">LOL</span>
+            <span class="reaction-counter" id="reactCountLaugh">0</span>
+          </button>
+          <button class="reaction-pill-btn" id="reactBtn_cry" onclick="handleReaction('cry')" title="Sad / Tears">
+            <span class="reaction-emoji">😭</span>
+            <span class="reaction-label">Sad</span>
+            <span class="reaction-counter" id="reactCountCry">0</span>
+          </button>
+          <button class="reaction-pill-btn" id="reactBtn_angry" onclick="handleReaction('angry')" title="Angry / Mad">
+            <span class="reaction-emoji">😡</span>
+            <span class="reaction-label">Mad</span>
+            <span class="reaction-counter" id="reactCountAngry">0</span>
+          </button>
+          <button class="reaction-pill-btn" id="reactBtn_dislike" onclick="handleReaction('dislike')" title="Dislike / Bad">
+            <span class="reaction-emoji">👎</span>
+            <span class="reaction-label">Dislike</span>
+            <span class="reaction-counter" id="reactCountDislike">0</span>
           </button>
         </div>
       </div>
@@ -126,6 +146,7 @@
         <!-- Comment Input Box -->
         <div class="comment-input-wrap">
           <div class="comment-input-box">
+            <img id="myCommentAvatar" src="https://api.dicebear.com/7.x/bottts/svg?seed=reader&backgroundColor=1e1b4b" alt="You" class="my-comment-pfp" onerror="this.src='/static/images/default_cover.svg'">
             <input type="text" id="commentTextInput" placeholder="Drop a thought on this chapter..." maxlength="500" autocomplete="off">
             <button id="commentSubmitBtn" class="btn-send-comment" onclick="submitChapterComment()" title="Post Comment">
               <i class="fa-solid fa-paper-plane"></i>
@@ -162,6 +183,25 @@
       Next <i class="fa-solid fa-forward-step"></i>
     </button>
   </footer>
+
+  <!-- ✏️ Edit Comment Modal -->
+  <div id="editCommentModal" class="modal-backdrop" style="display:none; z-index:1100;">
+    <div class="modal-card edit-comment-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-pen-to-square"></i> Edit Comment</h3>
+        <button class="modal-close" onclick="closeEditCommentModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <textarea id="editCommentInput" rows="4" placeholder="Edit your comment..." maxlength="500" style="width:100%; background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.15); border-radius:10px; color:#fff; padding:10px; font-family:inherit; font-size:13px; outline:none; resize:none;"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeEditCommentModal()">Cancel</button>
+        <button class="btn btn-primary" id="saveEditCommentBtn" onclick="saveEditedComment()">
+          <i class="fa-solid fa-floppy-disk"></i> Save
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- Toast Notification -->
   <div id="toast" class="toast"></div>

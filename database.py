@@ -750,13 +750,24 @@ def auto_sync_all_chapters():
 
 
 # =========================================================
-# 🔥 Chapter Reactions System (🔥 😱 ❤️ 👑)
+# 🔥 Chapter Reactions System (🔥 😱 ❤️ 👑 😂 😭 😡 👎)
 # =========================================================
-VALID_REACTIONS = {"fire", "shock", "heart", "crown"}
+VALID_REACTIONS = {"fire", "shock", "heart", "crown", "laugh", "cry", "angry", "dislike"}
 
 def get_chapter_reactions(channel_id: int, chapter: int, user_id: int = None) -> dict:
     """Returns reaction counts and the current user's reaction."""
-    counts = {"fire": 0, "shock": 0, "heart": 0, "crown": 0, "total": 0, "user_reaction": None}
+    counts = {
+        "fire": 0,
+        "shock": 0,
+        "heart": 0,
+        "crown": 0,
+        "laugh": 0,
+        "cry": 0,
+        "angry": 0,
+        "dislike": 0,
+        "total": 0,
+        "user_reaction": None
+    }
     try:
         pipeline = [
             {"$match": {"channel_id": int(channel_id), "chapter": int(chapter)}},
@@ -811,9 +822,9 @@ def toggle_chapter_reaction(channel_id: int, chapter: int, user_id: int, reactio
 
 
 # =========================================================
-# 💬 Chapter Community Comments System
+# 💬 Chapter Community Comments System (with Edit, Delete & Avatar)
 # =========================================================
-def get_chapter_comments(channel_id: int, chapter: int, user_id: int = None, limit: int = 40) -> list:
+def get_chapter_comments(channel_id: int, chapter: int, user_id: int = None, limit: int = 50) -> list:
     """Fetches formatted comments for a specific chapter."""
     comments = []
     try:
@@ -829,8 +840,10 @@ def get_chapter_comments(channel_id: int, chapter: int, user_id: int = None, lim
                 "id": str(doc["_id"]),
                 "user_id": doc.get("user_id"),
                 "user_name": doc.get("user_name", "Anonymous Reader"),
+                "user_avatar": doc.get("user_avatar") or f"/api/user/avatar/{doc.get('user_id')}",
                 "text": doc.get("text", ""),
                 "created_at": doc.get("created_at", time.time()),
+                "edited": doc.get("edited", False),
                 "likes_count": len(likes_list),
                 "is_liked": is_liked
             })
@@ -840,7 +853,7 @@ def get_chapter_comments(channel_id: int, chapter: int, user_id: int = None, lim
     return comments
 
 
-def add_chapter_comment(channel_id: int, chapter: int, user_id: int, user_name: str, text: str) -> dict:
+def add_chapter_comment(channel_id: int, chapter: int, user_id: int, user_name: str, text: str, user_avatar: str = None) -> dict:
     """Adds a new comment to a chapter."""
     clean_text = text.strip()[:600]
     if not clean_text:
@@ -854,8 +867,10 @@ def add_chapter_comment(channel_id: int, chapter: int, user_id: int, user_name: 
         "chapter": int(chapter),
         "user_id": int(user_id),
         "user_name": clean_name,
+        "user_avatar": user_avatar or f"/api/user/avatar/{user_id}",
         "text": clean_text,
         "created_at": now,
+        "edited": False,
         "likes": []
     }
 
@@ -865,14 +880,61 @@ def add_chapter_comment(channel_id: int, chapter: int, user_id: int, user_name: 
             "id": str(res.inserted_id),
             "user_id": int(user_id),
             "user_name": clean_name,
+            "user_avatar": doc["user_avatar"],
             "text": clean_text,
             "created_at": now,
+            "edited": False,
             "likes_count": 0,
             "is_liked": False
         }
     except Exception as e:
         logger.error(f"Error adding chapter comment: {e}")
         return None
+
+
+def edit_chapter_comment(comment_id_str: str, user_id: int, new_text: str, is_admin: bool = False) -> dict:
+    """Edits a comment text if user is author or admin."""
+    from bson.objectid import ObjectId
+    clean_text = new_text.strip()[:600]
+    if not clean_text:
+        return {"success": False, "error": "Comment cannot be empty"}
+
+    try:
+        obj_id = ObjectId(comment_id_str)
+        doc = chapter_comments_col.find_one({"_id": obj_id})
+        if not doc:
+            return {"success": False, "error": "Comment not found"}
+
+        if doc.get("user_id") != int(user_id) and not is_admin:
+            return {"success": False, "error": "Unauthorized to edit this comment"}
+
+        chapter_comments_col.update_one(
+            {"_id": obj_id},
+            {"$set": {"text": clean_text, "edited": True, "edited_at": time.time()}}
+        )
+        return {"success": True, "text": clean_text}
+    except Exception as e:
+        logger.error(f"Error editing comment: {e}")
+        return {"success": False, "error": str(e)}
+
+
+def delete_chapter_comment(comment_id_str: str, user_id: int, is_admin: bool = False) -> dict:
+    """Deletes a comment if user is author or admin."""
+    from bson.objectid import ObjectId
+    try:
+        obj_id = ObjectId(comment_id_str)
+        doc = chapter_comments_col.find_one({"_id": obj_id})
+        if not doc:
+            return {"success": False, "error": "Comment not found"}
+
+        if doc.get("user_id") != int(user_id) and not is_admin:
+            return {"success": False, "error": "Unauthorized to delete this comment"}
+
+        chapter_comments_col.delete_one({"_id": obj_id})
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Error deleting comment: {e}")
+        return {"success": False, "error": str(e)}
 
 
 def toggle_comment_like(comment_id_str: str, user_id: int) -> dict:

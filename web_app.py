@@ -637,7 +637,7 @@ def register_web_routes(app, bot_getter=None):
         return jsonify({"success": True, "reactions": reactions})
 
     # -------------------------------------------------------------
-    # 💬 API: Chapter Community Comments & Likes
+    # 💬 API: Chapter Community Comments, Likes, Edits, & Deletions
     # -------------------------------------------------------------
     @app.route("/api/chapter/comments", methods=["GET"])
     def api_get_chapter_comments():
@@ -666,6 +666,7 @@ def register_web_routes(app, bot_getter=None):
         ch_raw = data.get("chapter") or data.get("ch")
         user_id_raw = data.get("user_id")
         user_name = str(data.get("user_name", "Reader")).strip()
+        user_avatar = data.get("user_avatar")
         text = str(data.get("text", "")).strip()
 
         if not cid_raw or not ch_raw or not user_id_raw or not text:
@@ -679,11 +680,52 @@ def register_web_routes(app, bot_getter=None):
             return jsonify({"success": False, "error": "Invalid format"}), 400
 
         from database import add_chapter_comment
-        new_comment = add_chapter_comment(cid, ch, user_id, user_name, text)
+        new_comment = add_chapter_comment(cid, ch, user_id, user_name, text, user_avatar=user_avatar)
         if not new_comment:
             return jsonify({"success": False, "error": "Failed to post comment"}), 400
 
         return jsonify({"success": True, "comment": new_comment})
+
+    @app.route("/api/chapter/comment/edit", methods=["POST"])
+    def api_edit_chapter_comment():
+        data = request.get_json(force=True, silent=True) or {}
+        comment_id = str(data.get("comment_id", "")).strip()
+        user_id_raw = data.get("user_id")
+        new_text = str(data.get("text", "")).strip()
+
+        if not comment_id or not user_id_raw or not new_text:
+            return jsonify({"success": False, "error": "comment_id, user_id, and text are required"}), 400
+
+        try:
+            user_id = int(user_id_raw)
+        except ValueError:
+            return jsonify({"success": False, "error": "Invalid user_id"}), 400
+
+        from database import is_sudo, edit_chapter_comment
+        from config import BOT_OWNER_ID
+        is_admin = is_sudo(user_id) or user_id == BOT_OWNER_ID
+        res = edit_chapter_comment(comment_id, user_id, new_text, is_admin=is_admin)
+        return jsonify(res)
+
+    @app.route("/api/chapter/comment/delete", methods=["POST"])
+    def api_delete_chapter_comment():
+        data = request.get_json(force=True, silent=True) or {}
+        comment_id = str(data.get("comment_id", "")).strip()
+        user_id_raw = data.get("user_id")
+
+        if not comment_id or not user_id_raw:
+            return jsonify({"success": False, "error": "comment_id and user_id are required"}), 400
+
+        try:
+            user_id = int(user_id_raw)
+        except ValueError:
+            return jsonify({"success": False, "error": "Invalid user_id"}), 400
+
+        from database import is_sudo, delete_chapter_comment
+        from config import BOT_OWNER_ID
+        is_admin = is_sudo(user_id) or user_id == BOT_OWNER_ID
+        res = delete_chapter_comment(comment_id, user_id, is_admin=is_admin)
+        return jsonify(res)
 
     @app.route("/api/chapter/comment/like", methods=["POST"])
     def api_like_chapter_comment():
@@ -702,4 +744,33 @@ def register_web_routes(app, bot_getter=None):
         from database import toggle_comment_like
         res = toggle_comment_like(comment_id, user_id)
         return jsonify(res)
+
+    # -------------------------------------------------------------
+    # 👤 API: User Profile Avatar Fetcher from Telegram Bot API
+    # -------------------------------------------------------------
+    _avatar_cache = {}
+    @app.route("/api/user/avatar/<int:user_id>", methods=["GET"])
+    def api_get_user_avatar(user_id):
+        # 1. Check in-memory avatar cache
+        if user_id in _avatar_cache:
+            return redirect(_avatar_cache[user_id])
+
+        bot = bot_getter() if callable(bot_getter) else bot_getter
+        if bot and user_id:
+            try:
+                photos = bot.get_user_profile_photos(user_id, limit=1)
+                if photos and photos.total_count > 0 and len(photos.photos) > 0:
+                    photo_file = photos.photos[0][0]
+                    tg_file = bot.get_file(photo_file.file_id)
+                    if tg_file and tg_file.file_path:
+                        _avatar_cache[user_id] = tg_file.file_path
+                        return redirect(tg_file.file_path)
+            except Exception as e:
+                logger.debug(f"User avatar fetch error for {user_id}: {e}")
+
+        # Fallback to sleek UI avatar with initials
+        fallback_url = f"https://api.dicebear.com/7.x/bottts/svg?seed={user_id}&backgroundColor=1e1b4b"
+        _avatar_cache[user_id] = fallback_url
+        return redirect(fallback_url)
+
 

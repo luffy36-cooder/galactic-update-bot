@@ -620,7 +620,13 @@ function hapticFeedback(type = 'impact') {
 // =========================================================
 // 🔥 Chapter Reactions & 💬 Discussion Logic
 // =========================================================
-let currentChapterReactions = { fire: 0, shock: 0, heart: 0, crown: 0, total: 0, user_reaction: null };
+let currentChapterReactions = {
+  fire: 0, heart: 0, crown: 0, shock: 0,
+  laugh: 0, cry: 0, angry: 0, dislike: 0,
+  total: 0, user_reaction: null
+};
+let currentCommentsList = [];
+let activeEditingCommentId = null;
 
 async function loadChapterReactions() {
   if (!channelId || !currentChapter) return;
@@ -638,19 +644,13 @@ async function loadChapterReactions() {
 
 function renderReactionsUI() {
   const r = currentChapterReactions;
-  const fireEl = document.getElementById('reactCountFire');
-  const shockEl = document.getElementById('reactCountShock');
-  const heartEl = document.getElementById('reactCountHeart');
-  const crownEl = document.getElementById('reactCountCrown');
-  const totalEl = document.getElementById('reactTotalCount');
+  const types = ['fire', 'heart', 'crown', 'shock', 'laugh', 'cry', 'angry', 'dislike'];
 
-  if (fireEl) fireEl.textContent = r.fire || 0;
-  if (shockEl) shockEl.textContent = r.shock || 0;
-  if (heartEl) heartEl.textContent = r.heart || 0;
-  if (crownEl) crownEl.textContent = r.crown || 0;
-  if (totalEl) totalEl.textContent = `${r.total || 0} Reactions`;
+  types.forEach(type => {
+    const capitalized = type.charAt(0).toUpperCase() + type.slice(1);
+    const countEl = document.getElementById(`reactCount${capitalized}`);
+    if (countEl) countEl.textContent = r[type] || 0;
 
-  ['fire', 'shock', 'heart', 'crown'].forEach(type => {
     const btn = document.getElementById(`reactBtn_${type}`);
     if (btn) {
       if (r.user_reaction === type) {
@@ -660,16 +660,23 @@ function renderReactionsUI() {
       }
     }
   });
+
+  const totalEl = document.getElementById('reactTotalCount');
+  if (totalEl) totalEl.textContent = `${r.total || 0} Reactions`;
 }
 
 async function handleReaction(reactionType) {
   if (!channelId || !currentChapter) return;
   hapticFeedback('notification');
 
+  const emojiMap = {
+    fire: '🔥', heart: '❤️', crown: '👑', shock: '😱',
+    laugh: '😂', cry: '😭', angry: '😡', dislike: '👎'
+  };
+
   const btn = document.getElementById(`reactBtn_${reactionType}`);
   if (btn) {
     const rect = btn.getBoundingClientRect();
-    const emojiMap = { fire: '🔥', shock: '😱', heart: '❤️', crown: '👑' };
     showFloatingConfetti(emojiMap[reactionType] || '🔥', rect.left + rect.width / 2, rect.top);
   }
 
@@ -726,19 +733,25 @@ function showFloatingConfetti(emoji, startX, startY) {
 }
 
 // -------------------------------------------------------------
-// 💬 Chapter Comments Logic
+// 💬 Chapter Comments Logic (Avatars, Edit & Delete)
 // -------------------------------------------------------------
 async function loadChapterComments() {
   if (!channelId || !currentChapter) return;
   const countEl = document.getElementById('commentsHeaderCount');
+  const myPfp = document.getElementById('myCommentAvatar');
+
+  if (myPfp) {
+    myPfp.src = tg?.initDataUnsafe?.user?.photo_url || `/api/user/avatar/${currentUserId}`;
+  }
 
   try {
     const res = await fetch(`/api/chapter/comments?cid=${channelId}&ch=${currentChapter}&user_id=${currentUserId}`);
     const data = await res.json();
 
     if (data.success) {
+      currentCommentsList = data.comments || [];
       if (countEl) countEl.textContent = `(${data.count || 0})`;
-      renderCommentsList(data.comments || []);
+      renderCommentsList(currentCommentsList);
     }
   } catch (err) {
     console.error('Failed to load comments:', err);
@@ -759,20 +772,42 @@ function renderCommentsList(comments) {
     return;
   }
 
-  feed.innerHTML = comments.map(c => `
-    <div class="comment-card-item" id="comment_${c.id}">
-      <div class="comment-author-row">
-        <span class="comment-author-name">👤 ${escapeHtml(c.user_name)}</span>
-        <span class="comment-time-ago">${formatTimeAgo(c.created_at)}</span>
+  feed.innerHTML = comments.map(c => {
+    const isOwner = (c.user_id === currentUserId);
+    const pfpUrl = c.user_avatar || `/api/user/avatar/${c.user_id}`;
+    const editedTag = c.edited ? `<span class="comment-edited-tag">(edited)</span>` : '';
+
+    return `
+      <div class="comment-card-item" id="comment_${c.id}">
+        <img src="${pfpUrl}" alt="${escapeHtml(c.user_name)}" class="comment-user-pfp" onerror="this.src='/static/images/default_cover.svg'">
+        <div class="comment-content-col">
+          <div class="comment-author-row">
+            <span class="comment-author-name">
+              ${escapeHtml(c.user_name)}
+              ${editedTag}
+            </span>
+            <span class="comment-time-ago">${formatTimeAgo(c.created_at)}</span>
+          </div>
+          <div class="comment-body-text" id="commentText_${c.id}">${escapeHtml(c.text)}</div>
+          <div class="comment-actions-bar">
+            <div class="comment-author-actions">
+              ${isOwner ? `
+                <button class="btn-comment-action" onclick="openEditCommentModal('${c.id}')" title="Edit">
+                  <i class="fa-solid fa-pen"></i> Edit
+                </button>
+                <button class="btn-comment-action btn-comment-delete" onclick="handleDeleteComment('${c.id}')" title="Delete">
+                  <i class="fa-solid fa-trash-can"></i> Delete
+                </button>
+              ` : ''}
+            </div>
+            <button class="btn-comment-like ${c.is_liked ? 'active-like' : ''}" onclick="handleCommentLike('${c.id}')">
+              <i class="fa-solid fa-thumbs-up"></i> <span id="likeCount_${c.id}">${c.likes_count || 0}</span>
+            </button>
+          </div>
+        </div>
       </div>
-      <div class="comment-body-text">${escapeHtml(c.text)}</div>
-      <div class="comment-actions-bar">
-        <button class="btn-comment-like ${c.is_liked ? 'active-like' : ''}" onclick="handleCommentLike('${c.id}')">
-          <i class="fa-solid fa-thumbs-up"></i> <span id="likeCount_${c.id}">${c.likes_count || 0}</span>
-        </button>
-      </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 async function submitChapterComment() {
@@ -784,6 +819,7 @@ async function submitChapterComment() {
   if (!text) return;
 
   const userName = tg?.initDataUnsafe?.user?.first_name || localStorage.getItem('galactic_user_name') || 'Reader';
+  const userAvatar = tg?.initDataUnsafe?.user?.photo_url || `/api/user/avatar/${currentUserId}`;
 
   if (submitBtn) submitBtn.disabled = true;
   hapticFeedback('impact');
@@ -797,6 +833,7 @@ async function submitChapterComment() {
         chapter: currentChapter,
         user_id: currentUserId,
         user_name: userName,
+        user_avatar: userAvatar,
         text: text
       })
     });
@@ -814,6 +851,95 @@ async function submitChapterComment() {
     showToast('Failed to post comment');
   } finally {
     if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+// ✏️ Edit Comment Modal Handlers
+function openEditCommentModal(commentId) {
+  const comment = currentCommentsList.find(c => c.id === commentId);
+  if (!comment) return;
+
+  activeEditingCommentId = commentId;
+  const input = document.getElementById('editCommentInput');
+  if (input) input.value = comment.text || '';
+
+  const modal = document.getElementById('editCommentModal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeEditCommentModal() {
+  const modal = document.getElementById('editCommentModal');
+  if (modal) modal.style.display = 'none';
+  activeEditingCommentId = null;
+}
+
+async function saveEditedComment() {
+  if (!activeEditingCommentId) return;
+
+  const input = document.getElementById('editCommentInput');
+  const saveBtn = document.getElementById('saveEditCommentBtn');
+  const text = input?.value.trim();
+
+  if (!text) {
+    showToast('Comment cannot be empty');
+    return;
+  }
+
+  if (saveBtn) saveBtn.disabled = true;
+  hapticFeedback('impact');
+
+  try {
+    const res = await fetch('/api/chapter/comment/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        comment_id: activeEditingCommentId,
+        user_id: currentUserId,
+        text: text
+      })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      showToast('✏️ Comment updated!');
+      closeEditCommentModal();
+      loadChapterComments();
+    } else {
+      showToast(data.error || 'Failed to update comment');
+    }
+  } catch (err) {
+    console.error('Failed to edit comment:', err);
+    showToast('Network error editing comment');
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+// 🗑️ Delete Comment Handler
+async function handleDeleteComment(commentId) {
+  if (!confirm('Are you sure you want to delete this comment?')) return;
+  hapticFeedback('impact');
+
+  try {
+    const res = await fetch('/api/chapter/comment/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        comment_id: commentId,
+        user_id: currentUserId
+      })
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      showToast('🗑️ Comment deleted');
+      loadChapterComments();
+    } else {
+      showToast(data.error || 'Failed to delete comment');
+    }
+  } catch (err) {
+    console.error('Failed to delete comment:', err);
+    showToast('Error deleting comment');
   }
 }
 
@@ -860,4 +986,5 @@ function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
+
 
