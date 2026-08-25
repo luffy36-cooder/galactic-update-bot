@@ -30,7 +30,7 @@ except ImportError:
 from config import BOT_TOKEN
 
 # 💫 Core Handlers
-from start_handler import start_cmd, help_cmd, help_button_handler, guide_cmd
+from start_handler import start_cmd, help_cmd, help_button_handler, guide_cmd, guide_page_callback
 from profile_handler import profile_cmd
 from stats_handler import stats_cmd
 from ping_handler import ping_cmd
@@ -57,6 +57,7 @@ from admin_handlers import (
     uu_cmd,
     uu_page_callback,
     adminhelp_cmd,
+    adminhelp_page_callback,
 )
 from database import auto_sync_all_chapters
 from addmanga_handler import add_manga_cmd
@@ -210,6 +211,8 @@ def main():
     dp.add_handler(CallbackQueryHandler(handle_request_callbacks, pattern="^req_"))
     dp.add_handler(CallbackQueryHandler(select_manga_callback, pattern=r"^select_"))
     dp.add_handler(CallbackQueryHandler(uu_page_callback, pattern=r"^uu_page_\d+$"))
+    dp.add_handler(CallbackQueryHandler(guide_page_callback, pattern=r"^guide_page_\d+$"))
+    dp.add_handler(CallbackQueryHandler(adminhelp_page_callback, pattern=r"^adminhelp_page_\d+$"))
 
     # 🔍 Inline Search & Group/DM Text Search
     dp.add_handler(InlineQueryHandler(inline_query))

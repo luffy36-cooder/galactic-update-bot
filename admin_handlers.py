@@ -1,7 +1,7 @@
 import os
 import html
 import logging
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from telegram.ext import CallbackContext
 from database import (
     list_all_manga,
@@ -558,41 +558,80 @@ def uu_page_callback(update: Update, context: CallbackContext):
 
 
 # 👑 /adminhelp — Sends the Admin Command Center Banner & Full Cheat Sheet
-def adminhelp_cmd(update: Update, context: CallbackContext):
+def get_admin_guide_page(page: int):
+    if page == 1:
+        banner_path = os.path.join(os.path.dirname(__file__), "banners", "admin_guide_p1.png")
+        caption = (
+            "👑 <b>MANGA GALACTIC — ADMIN COMMAND CENTER (Page 1/2)</b> 🛠️\n\n"
+            "📢 <b>1. Channel Broadcasting Suite:</b>\n"
+            "• All Channels: <code>/broadcast &lt;message&gt;</code>\n"
+            "• Auto-Pin: <code>/broadcast -pin &lt;message&gt;</code>\n"
+            "• Specific Channel: <code>/broadcast -1002638509926 &lt;msg&gt;</code>\n"
+            "• Multiple Channels: <code>/broadcast -1001,-1002 &lt;msg&gt;</code>\n"
+            "• Specific Manga: <code>/broadcast manga=Solo Leveling &lt;msg&gt;</code>\n"
+            "• All Group Chats: <code>/broadcast gc &lt;msg&gt;</code> <i>(or <code>/broadcast -pin gc</code>)</i>\n"
+            "• Custom Buttons: <code>... button=Read|https://...</code>\n"
+            "• <i>Tip: Reply to any photo/video/doc/sticker with /broadcast</i>\n\n"
+            "📬 <b>2. User DM Broadcasts:</b>\n"
+            "• Reply to message with <code>/dmbroadcast</code> <i>(or <code>/dmbroadcast -pin</code>)</i>\n\n"
+            "📊 <b>3. Status Inspector & Safe Undo:</b>\n"
+            "• <code>/bdst</code> — Broadcast status & history report\n"
+            "• <code>/bdst &lt;id&gt;</code> — Detailed delivery metrics\n"
+            "• <code>/delete_broadcast &lt;id&gt;</code> — Delete & unpin in all channels\n"
+            "• <code>/delete_dmbroadcast &lt;id&gt;</code> — Delete DM broadcast from users"
+        )
+        buttons = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Next Page (2/2) ➡️", callback_data="adminhelp_page_2"),
+                InlineKeyboardButton("📊 Broadcast Status (/bdst)", callback_data="admin_bdst")
+            ],
+            [
+                InlineKeyboardButton("👥 Users Directory (/uu)", callback_data="uu_page_0"),
+                InlineKeyboardButton("⚡ Sudo Admins", callback_data="help_admin")
+            ]
+        ])
+    else:
+        banner_path = os.path.join(os.path.dirname(__file__), "banners", "admin_guide_p2.png")
+        caption = (
+            "👑 <b>MANGA GALACTIC — ADMIN COMMAND CENTER (Page 2/2)</b> 🛠️\n\n"
+            "📚 <b>1. Manga Channel Management:</b>\n"
+            "• <code>/add &lt;name&gt;</code> — Register a new manga channel in chat\n"
+            "• <code>/addmanga &lt;id&gt; &lt;name&gt; &lt;link&gt; &lt;img&gt;</code> — Manual insert\n"
+            "• <code>/removemanga &lt;name&gt;</code> — Permanently delete manga\n"
+            "• <code>/editmanga &lt;old|new|link&gt;</code> — Rename or update link\n"
+            "• <code>/listmanga</code> — Paginated list of all registered manga\n\n"
+            "⚡ <b>2. Chapter Indexing & Auto-Sync:</b>\n"
+            "• <code>/scanallchannels</code> — High-speed MTProto PDF scanner\n"
+            "• <code>/syncchapters</code> — Auto-recalculate chapter counts\n"
+            "• <code>/setchapters &lt;name&gt; &lt;count&gt;</code> — Manually set count\n"
+            "• <b>Forward PDF in Bot PM:</b> Instantly indexes chapter for Web Reader\n"
+            "• <code>/unpost &lt;id&gt; &lt;ch&gt;</code> — Unmark chapter to re-post\n\n"
+            "👥 <b>3. Users, Sudo & Requests:</b>\n"
+            "• <code>/uu</code> — Secret paginated Bot Users Directory\n"
+            "• <code>/sudo</code> — List all active admins & owner\n"
+            "• <code>/addadmins &lt;user_id&gt;</code> — Promote user to admin\n"
+            "• <code>/removeadmins &lt;user_id&gt;</code> — Demote admin (Owner only)\n"
+            "• <code>/requestlist</code> & <code>/replyreq &lt;id&gt; &lt;msg&gt;</code> — Manga requests"
+        )
+        buttons = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("⬅️ Prev Page (1/2)", callback_data="adminhelp_page_1"),
+                InlineKeyboardButton("👥 Users Directory (/uu)", callback_data="uu_page_0")
+            ],
+            [
+                InlineKeyboardButton("⚡ Sudo Admins", callback_data="help_admin"),
+                InlineKeyboardButton("📊 Stats (/stats)", callback_data="help_stats")
+            ]
+        ])
+    return banner_path, caption, buttons
+
+
+def adminhelp_cmd(update: Update, context: CallbackContext, page: int = 1):
     user_id = update.effective_user.id if update.effective_user else 0
     if not is_admin(user_id):
         return update.message.reply_text("❌ You are not authorized to view admin help.")
 
-    banner_path = os.path.join(os.path.dirname(__file__), "banners", "admin_guide_banner.png")
-
-    caption = (
-        "👑 <b>MANGA GALACTIC — ADMIN COMMAND CENTER</b> 🛠️\n\n"
-        "📢 <b>1. Broadcasting Suite:</b>\n"
-        "• All Channels: <code>/broadcast &lt;message&gt;</code>\n"
-        "• Auto-Pin in Channels: <code>/broadcast -pin &lt;message&gt;</code>\n"
-        "• Specific Channel: <code>/broadcast -1002638509926 &lt;msg&gt;</code>\n"
-        "• Specific Manga: <code>/broadcast manga=Solo Leveling &lt;msg&gt;</code>\n"
-        "• All Group Chats: <code>/broadcast gc &lt;msg&gt;</code>\n"
-        "• User DMs: Reply with <code>/dmbroadcast</code> <i>(or <code>/dmbroadcast -pin</code>)</i>\n"
-        "• Status Inspector: <code>/bdst</code>\n"
-        "• Undo / Delete: <code>/delete_broadcast &lt;id&gt;</code>\n\n"
-        "👥 <b>2. User & Admin Management:</b>\n"
-        "• <code>/uu</code> — Secret paginated bot users directory\n"
-        "• <code>/sudo</code> — List all active admins & owner\n"
-        "• <code>/addadmins &lt;user_id&gt;</code> — Promote user to admin\n\n"
-        "⚡ <b>3. Channel & PDF Indexing:</b>\n"
-        "• <code>/scanallchannels</code> — High-speed MTProto PDF scanner\n"
-        "• <code>/syncchapters</code> — Auto-recalculate chapter counts\n"
-        "• <code>/add &lt;name&gt;</code> — Register manga channel\n\n"
-        "🔒 <i>Confidential • Authorized Admins Only</i>"
-    )
-
-    buttons = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("👥 Users Directory (/uu)", callback_data="uu_page_0"),
-            InlineKeyboardButton("⚡ Sudo Admins", callback_data="help_admin")
-        ]
-    ])
+    banner_path, caption, buttons = get_admin_guide_page(page)
 
     if os.path.exists(banner_path):
         with open(banner_path, "rb") as f:
@@ -605,4 +644,39 @@ def adminhelp_cmd(update: Update, context: CallbackContext):
             update.message.reply_text(caption, parse_mode="HTML", reply_markup=buttons)
         elif update.effective_chat:
             update.effective_chat.send_message(caption, parse_mode="HTML", reply_markup=buttons)
+
+
+def adminhelp_page_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+
+    user_id = query.from_user.id if query.from_user else 0
+    if not is_admin(user_id):
+        return query.edit_message_text("❌ You are not authorized.")
+
+    try:
+        page = int(query.data.split("_")[-1])
+    except Exception:
+        page = 1
+
+    banner_path, caption, buttons = get_admin_guide_page(page)
+
+    if os.path.exists(banner_path):
+        with open(banner_path, "rb") as f:
+            try:
+                query.edit_message_media(
+                    media=InputMediaPhoto(media=f, caption=caption, parse_mode="HTML"),
+                    reply_markup=buttons
+                )
+            except Exception:
+                try:
+                    query.edit_message_caption(caption=caption, parse_mode="HTML", reply_markup=buttons)
+                except Exception:
+                    pass
+    else:
+        try:
+            query.edit_message_caption(caption=caption, parse_mode="HTML", reply_markup=buttons)
+        except Exception:
+            pass
+
 
