@@ -3,6 +3,7 @@ import logging
 from uuid import uuid4
 from telegram import (
     InlineQueryResultArticle,
+    InlineQueryResultPhoto,
     InlineQueryResultCachedPhoto,
     InputTextMessageContent,
     InlineKeyboardMarkup,
@@ -374,22 +375,46 @@ def inline_query(update, context):
                 ]
             ]
 
-            results.append(
-                InlineQueryResultArticle(
-                    id=f"manga_{channel_id}_{offset}",
-                    title=f"📚 {title}",
-                    description=item_description,
-                    thumbnail_url=cover_image,
-                    thumbnail_width=64,
-                    thumbnail_height=64,
-                    input_message_content=InputTextMessageContent(
-                        f"<a href='{cover_image}'>&#8205;</a>" + caption_text,
+            img_file_id = manga.get("image") or manga.get("image_id") or manga.get("banner") or manga.get("photo")
+
+            if img_file_id and isinstance(img_file_id, str) and not img_file_id.startswith("http") and len(img_file_id) > 20:
+                results.append(
+                    InlineQueryResultCachedPhoto(
+                        id=f"manga_{channel_id}_{offset}",
+                        photo_file_id=img_file_id,
+                        title=f"📚 {title}",
+                        description=item_description,
+                        caption=caption_text,
                         parse_mode="HTML",
-                        disable_web_page_preview=False
-                    ),
-                    reply_markup=InlineKeyboardMarkup(buttons)
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
                 )
-            )
+            elif img_file_id and isinstance(img_file_id, str) and (img_file_id.startswith("http://") or img_file_id.startswith("https://")):
+                results.append(
+                    InlineQueryResultPhoto(
+                        id=f"manga_{channel_id}_{offset}",
+                        photo_url=img_file_id,
+                        thumbnail_url=img_file_id,
+                        title=f"📚 {title}",
+                        description=item_description,
+                        caption=caption_text,
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
+                )
+            else:
+                results.append(
+                    InlineQueryResultPhoto(
+                        id=f"manga_{channel_id}_{offset}",
+                        photo_url=cover_image,
+                        thumbnail_url=cover_image,
+                        title=f"📚 {title}",
+                        description=item_description,
+                        caption=caption_text,
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
+                )
 
         if not results:
             no_match_text = (
