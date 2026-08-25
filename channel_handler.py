@@ -31,7 +31,7 @@ channel_buffers = defaultdict(list)
 last_post_time = {}
 
 # 🎭 Static Sticker sent to update channel after each chapter post (auto-deletes previous)
-UPDATE_STICKER_ID = "CAACAgUAAxkBAAIG_2qN_vCMZSjbGLA_Ml3hOjmFgf-1AAJ_JgAC0-lgVFqEBCL45B0oPQQ"
+UPDATE_STICKER_ID = "CAACAgUAAxkBAAIHBWqOAYmiai2uHWjIGCQugJAp-QkHAAKFJAAC5CRgVIROMy9LyvrLPQQ"
 
 def send_update_sticker(bot):
     """Sends static update sticker to update channel and removes the previous one."""
