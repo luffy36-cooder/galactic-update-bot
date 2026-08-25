@@ -3,6 +3,7 @@ import logging
 from uuid import uuid4
 from telegram import (
     InlineQueryResultArticle,
+    InlineQueryResultCachedPhoto,
     InputTextMessageContent,
     InlineKeyboardMarkup,
     InlineKeyboardButton
@@ -311,9 +312,7 @@ def inline_query(update, context):
             stars_str = f"⭐ <b>{avg}/5.0</b> ({count} reviews)" if count > 0 else "⭐ <i>No ratings yet</i>"
 
             safe_title = html.escape(title)
-            # Embed cover image banner with invisible link
-            message_content = (
-                f"<a href='{cover_image}'>&#8205;</a>"
+            caption_text = (
                 f"📚 <b>{safe_title}</b>\n"
                 f"{stars_str}\n"
                 f"📖 <b>Total Chapters:</b> {total_chapters or 'Ongoing'}\n"
@@ -332,22 +331,36 @@ def inline_query(update, context):
                 ]
             ]
 
-            results.append(
-                InlineQueryResultArticle(
-                    id=f"manga_{channel_id}",
-                    title=title,
-                    description=description,
-                    thumbnail_url=cover_image,
-                    thumbnail_width=100,
-                    thumbnail_height=140,
-                    input_message_content=InputTextMessageContent(
-                        message_content,
+            img_file_id = manga.get("image")
+            if img_file_id and isinstance(img_file_id, str) and not img_file_id.startswith("http"):
+                results.append(
+                    InlineQueryResultCachedPhoto(
+                        id=f"manga_{channel_id}",
+                        photo_file_id=img_file_id,
+                        title=title,
+                        description=description,
+                        caption=caption_text,
                         parse_mode="HTML",
-                        disable_web_page_preview=False
-                    ),
-                    reply_markup=InlineKeyboardMarkup(buttons)
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
                 )
-            )
+            else:
+                results.append(
+                    InlineQueryResultArticle(
+                        id=f"manga_{channel_id}",
+                        title=title,
+                        description=description,
+                        thumbnail_url=cover_image if img_file_id else "https://img.icons8.com/color/96/book-stack.png",
+                        thumbnail_width=100,
+                        thumbnail_height=140,
+                        input_message_content=InputTextMessageContent(
+                            caption_text,
+                            parse_mode="HTML",
+                            disable_web_page_preview=False
+                        ),
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
+                )
 
         if not results:
             no_match_text = (
