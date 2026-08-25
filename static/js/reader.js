@@ -24,6 +24,56 @@ if (window.pdfjsLib) {
     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
 
+// ⚡ IndexedDB Local Chapter Cache for Instant 0ms Re-reads & Offline Power
+const ChapterCache = {
+  dbPromise: null,
+  getDB() {
+    if (!this.dbPromise) {
+      this.dbPromise = new Promise((resolve) => {
+        try {
+          if (!window.indexedDB) return resolve(null);
+          const req = indexedDB.open('GalacticReaderDB', 1);
+          req.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('chapters')) {
+              db.createObjectStore('chapters');
+            }
+          };
+          req.onsuccess = (e) => resolve(e.target.result);
+          req.onerror = () => resolve(null);
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    }
+    return this.dbPromise;
+  },
+  async get(key) {
+    try {
+      const db = await this.getDB();
+      if (!db) return null;
+      return new Promise((resolve) => {
+        const tx = db.transaction('chapters', 'readonly');
+        const store = tx.objectStore('chapters');
+        const req = store.get(key);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+    } catch (e) {
+      return null;
+    }
+  },
+  async set(key, buffer) {
+    try {
+      const db = await this.getDB();
+      if (!db) return;
+      const tx = db.transaction('chapters', 'readwrite');
+      const store = tx.objectStore('chapters');
+      store.put(buffer, key);
+    } catch (e) {}
+  }
+};
+
 // URL Params & User ID
 const urlParams = new URLSearchParams(window.location.search);
 const channelId = urlParams.get('cid') || urlParams.get('channel_id');
@@ -38,8 +88,11 @@ let currentMode = 'webtoon'; // 'webtoon' | 'page'
 let mangaData = null;
 let availableChapters = [1];
 let renderedPages = new Set();
+let renderQueue = [];
+let isProcessingQueue = false;
 let isRenderingPage = false;
 let lastScrollTop = 0;
+let sweepInterval = null;
 
 // Width Presets for PC / Desktop
 const WIDTH_PRESETS = ['normal', 'compact', 'wide', 'full'];
@@ -196,6 +249,9 @@ function populateChapterDropdown() {
 async function loadChapterPdf() {
   showLoader(true, `Loading Chapter ${currentChapter}...`);
   renderedPages.clear();
+  renderQueue = [];
+  isProcessingQueue = false;
+
   if (pdfDoc) {
     try { pdfDoc.destroy(); } catch (e) {}
   }
@@ -204,31 +260,71 @@ async function loadChapterPdf() {
   const select = document.getElementById('chapterSelect');
   if (select) select.value = currentChapter;
 
+  const cacheKey = `${channelId}_${currentChapter}`;
   const pdfUrl = `/api/chapter/file/${channelId}/${currentChapter}`;
 
   try {
-    const loadingTask = window.pdfjsLib.getDocument({
-      url: pdfUrl,
+    let pdfData = null;
+
+    // 1. ⚡ Instant 0ms IndexedDB Local Cache Check
+    const cachedBuffer = await ChapterCache.get(cacheKey);
+    if (cachedBuffer && cachedBuffer.byteLength > 5000) {
+      pdfData = new Uint8Array(cachedBuffer);
+    } else {
+      // 2. 🚀 Single High-Speed Direct Stream with Live Chunk Download
+      const response = await fetch(pdfUrl);
+      if (!response.ok) {
+        let errData = {};
+        try { errData = await response.json(); } catch (e) {}
+        throw new Error(errData.error || `Failed to fetch chapter (HTTP ${response.status})`);
+      }
+
+      const contentLength = response.headers.get('content-length');
+      const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+      let loadedBytes = 0;
+
+      const reader = response.body.getReader();
+      const chunks = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        loadedBytes += value.length;
+
+        if (totalBytes > 0) {
+          const percent = Math.min(Math.round((loadedBytes / totalBytes) * 100), 99);
+          const bar = document.getElementById('loadProgress');
+          const text = document.getElementById('loaderStatusText');
+          if (bar) bar.style.width = `${percent}%`;
+          if (text) text.textContent = `Downloading Chapter ${currentChapter} (${percent}%)...`;
+        }
+      }
+
+      // Combine chunks into single ArrayBuffer
+      const fullBuffer = new Uint8Array(loadedBytes);
+      let offset = 0;
+      for (const chunk of chunks) {
+        fullBuffer.set(chunk, offset);
+        offset += chunk.length;
+      }
+
+      pdfData = fullBuffer;
+      // Persist in background to IndexedDB for instant 0ms future reads!
+      ChapterCache.set(cacheKey, fullBuffer.buffer);
+    }
+
+    const text = document.getElementById('loaderStatusText');
+    if (text) text.textContent = `Rendering Chapter ${currentChapter}...`;
+
+    pdfDoc = await window.pdfjsLib.getDocument({
+      data: pdfData,
       cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
       cMapPacked: true,
-      rangeChunkSize: 262144, // 256KB chunk stream for fast reliable buffering across all networks!
-      disableAutoFetch: false,
-      disableStream: false,
       isEvalSupported: false,
       useSystemFonts: true
-    });
+    }).promise;
 
-    loadingTask.onProgress = (progress) => {
-      if (progress.total > 0) {
-        const percent = Math.round((progress.loaded / progress.total) * 100);
-        const bar = document.getElementById('loadProgress');
-        const text = document.getElementById('loaderStatusText');
-        if (bar) bar.style.width = `${percent}%`;
-        if (text) text.textContent = `Buffering Chapter ${currentChapter} (${percent}%)...`;
-      }
-    };
-
-    pdfDoc = await loadingTask.promise;
     totalPages = pdfDoc.numPages;
     showLoader(false);
 
@@ -268,8 +364,15 @@ function prefetchNextChapter() {
   const idx = availableChapters.indexOf(currentChapter);
   if (idx !== -1 && idx < availableChapters.length - 1) {
     const nextChap = availableChapters[idx + 1];
-    // Background cache warm on server
-    fetch(`/api/chapter/file/${channelId}/${nextChap}`, { method: 'HEAD' }).catch(() => {});
+    // Background cache warm on server & browser
+    fetch(`/api/chapter/file/${channelId}/${nextChap}`).then(async res => {
+      if (res.ok) {
+        const buf = await res.arrayBuffer();
+        if (buf && buf.byteLength > 5000) {
+          ChapterCache.set(`${channelId}_${nextChap}`, buf);
+        }
+      }
+    }).catch(() => {});
   }
 }
 
@@ -301,14 +404,10 @@ function renderWebtoonMode() {
   setupPageIntersectionObserver();
   updatePageIndicator(1);
 
-  // ⚡ Immediately render Page 1 & 2 in parallel for 0ms visible first paint!
-  renderCanvasPage(1);
-  if (totalPages >= 2) {
-    setTimeout(() => renderCanvasPage(2), 20);
-  }
-  if (totalPages >= 3) {
-    setTimeout(() => renderCanvasPage(3), 60);
-  }
+  // ⚡ Immediately queue and render initial pages
+  queuePageRender(1);
+  if (totalPages >= 2) queuePageRender(2);
+  if (totalPages >= 3) queuePageRender(3);
 }
 
 function setupPageIntersectionObserver() {
@@ -322,14 +421,14 @@ function setupPageIntersectionObserver() {
 
         // Pre-render page canvas smoothly before scroll
         if (!renderedPages.has(pageNum)) {
-          renderCanvasPage(pageNum);
+          queuePageRender(pageNum);
         }
 
-        // Background pipeline for next 2 adjacent pages
-        for (let offset = 1; offset <= 2; offset++) {
+        // Background pipeline for adjacent pages
+        for (let offset = 1; offset <= 3; offset++) {
           const nextP = pageNum + offset;
           if (nextP <= totalPages && !renderedPages.has(nextP)) {
-            setTimeout(() => renderCanvasPage(nextP), offset * 35);
+            queuePageRender(nextP);
           }
         }
       }
@@ -340,6 +439,43 @@ function setupPageIntersectionObserver() {
   });
 
   document.querySelectorAll('.webtoon-page-wrapper').forEach(el => observer.observe(el));
+
+  // Fallback safety sweep: ensures 0 blank pages on fast scroll
+  if (sweepInterval) clearInterval(sweepInterval);
+  sweepInterval = setInterval(sweepVisiblePages, 1000);
+}
+
+function sweepVisiblePages() {
+  const wrappers = document.querySelectorAll('.webtoon-page-wrapper');
+  wrappers.forEach(el => {
+    const pNum = parseInt(el.getAttribute('data-page-num'));
+    if (!renderedPages.has(pNum)) {
+      const rect = el.getBoundingClientRect();
+      if (rect.top < window.innerHeight + 1600 && rect.bottom > -1600) {
+        queuePageRender(pNum);
+      }
+    }
+  });
+}
+
+function queuePageRender(pageNum) {
+  if (!pdfDoc || renderedPages.has(pageNum) || renderQueue.includes(pageNum)) return;
+  renderQueue.push(pageNum);
+  processRenderQueue();
+}
+
+async function processRenderQueue() {
+  if (isProcessingQueue || renderQueue.length === 0 || !pdfDoc) return;
+  isProcessingQueue = true;
+
+  while (renderQueue.length > 0) {
+    const pageNum = renderQueue.shift();
+    if (!renderedPages.has(pageNum)) {
+      await renderCanvasPage(pageNum);
+    }
+  }
+
+  isProcessingQueue = false;
 }
 
 async function renderCanvasPage(pageNum) {
@@ -392,6 +528,8 @@ async function renderCanvasPage(pageNum) {
 
   } catch (err) {
     console.error(`Failed to render page ${pageNum}:`, err);
+    // Allow automatic retry on scroll or sweep
+    renderedPages.delete(pageNum);
   }
 }
 
