@@ -1,13 +1,17 @@
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackContext, CallbackQueryHandler, CommandHandler
 from database import manga_col, is_sudo
+from config import BOT_OWNER_ID
 
 PAGE_SIZE = 6
 
+def is_admin(user_id: int) -> bool:
+    return user_id == BOT_OWNER_ID or is_sudo(user_id)
+
 def list_manga(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not is_sudo(user_id):
-        update.message.reply_text("⛔ Only sudo users can view the full manga list.")
+    if not is_admin(user_id):
+        update.message.reply_text("⛔ Only sudo users and owner can view the full manga list.")
         return
 
     send_manga_page(update, context, page=0)
@@ -61,7 +65,7 @@ def list_manga_page_callback(update: Update, context: CallbackContext):
     query.answer()
 
     user_id = query.from_user.id
-    if not is_sudo(user_id):
+    if not is_admin(user_id):
         query.edit_message_text("⛔ You're not allowed to view this.")
         return
 

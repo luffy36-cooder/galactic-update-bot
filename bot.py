@@ -57,7 +57,7 @@ from admin_handlers import (
 )
 from database import auto_sync_all_chapters
 from addmanga_handler import add_manga_cmd
-from broadcast_handler import broadcast_cmd, delete_broadcast_cmd
+from broadcast_handler import broadcast_cmd, delete_broadcast_cmd, bdst_cmd
 from dmbroadcast_handler import dmbroadcast_cmd, delete_dmbroadcast_cmd
 from delete_forwarded_handler import delete_forwarded_cmd
 
@@ -169,6 +169,7 @@ def main():
     dp.add_handler(CommandHandler("sudo", sudo_cmd))
     dp.add_handler(CommandHandler("broadcast", broadcast_cmd))
     dp.add_handler(CommandHandler("delete_broadcast", delete_broadcast_cmd))
+    dp.add_handler(CommandHandler("bdst", bdst_cmd))
     dp.add_handler(CommandHandler("delete_forwarded", delete_forwarded_cmd))
     dp.add_handler(CommandHandler("dmbroadcast", dmbroadcast_cmd))
     dp.add_handler(CommandHandler("delete_dmbroadcast", delete_dmbroadcast_cmd))

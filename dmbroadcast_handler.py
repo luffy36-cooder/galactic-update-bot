@@ -61,11 +61,19 @@ def dmbroadcast_cmd(update: Update, context: CallbackContext):
         except Exception as e:
             failed += 1
 
-    # Persist broadcast log for reliable deletion later
+    # Persist broadcast log for reliable deletion and /bdst history
     if sent_records:
+        preview = (reply_msg.text or reply_msg.caption or "[Media Attachment]").strip()
         dmbroadcast_log_col.insert_one({
             "broadcast_id": update.message.message_id,
             "created_at": time.time(),
+            "admin_id": user_id,
+            "target_type": "dms",
+            "target_desc": f"All Bot Users ({len(user_ids)})",
+            "content_preview": (preview[:80] + "...") if len(preview) > 80 else preview,
+            "total_targets": len(user_ids),
+            "sent_count": success,
+            "failed_count": failed,
             "records": sent_records
         })
 
