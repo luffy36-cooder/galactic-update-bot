@@ -155,6 +155,9 @@ def start_cmd(update: Update, context: CallbackContext):
         [
             InlineKeyboardButton("📨 Request Manga", callback_data="help_requests"),
             InlineKeyboardButton("📖 Help Guide", callback_data="help_main")
+        ],
+        [
+            InlineKeyboardButton("💬 Join Manga Galactic Group", url="https://t.me/MANGA_GALACTIC_GROUP")
         ]
     ])
 
@@ -310,7 +313,7 @@ def help_button_handler(update: Update, context: CallbackContext):
         ),
         "help_admin": (
             "🛠 <b>Admin & Sudo Management</b>\n\n"
-            "• <code>/scanallchannels</code> — High-speed MTProto past PDF scanner 🛰️\n"
+            "• <code>/scanallchannels</code> — High-speed Cloud past PDF scanner 🛰️\n"
             "• <code>/syncchapters</code> — Auto-sync chapter numbers\n"
             "• <code>/add &lt;channel_id&gt; &lt;name&gt;</code> — Add new manga channel\n"
             "• <code>/requestlist</code> — Review pending requests\n"
@@ -371,6 +374,9 @@ def get_user_guide_page(page: int, user_id: int, bot_username: str, is_private: 
             [
                 InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat=""),
                 InlineKeyboardButton("Next Page (2/2) ➡️", callback_data="guide_page_2")
+            ],
+            [
+                InlineKeyboardButton("💬 Join Manga Galactic Group", url="https://t.me/MANGA_GALACTIC_GROUP")
             ]
         ])
     else:

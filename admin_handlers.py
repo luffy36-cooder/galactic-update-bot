@@ -601,7 +601,7 @@ def get_admin_guide_page(page: int):
             "• <code>/editmanga &lt;old|new|link&gt;</code> — Rename or update link\n"
             "• <code>/listmanga</code> — Paginated list of all registered manga\n\n"
             "⚡ <b>2. Chapter Indexing & Auto-Sync:</b>\n"
-            "• <code>/scanallchannels</code> — High-speed MTProto PDF scanner\n"
+            "• <code>/scanallchannels</code> — High-speed Cloud PDF scanner\n"
             "• <code>/syncchapters</code> — Auto-recalculate chapter counts\n"
             "• <code>/setchapters &lt;name&gt; &lt;count&gt;</code> — Manually set count\n"
             "• <b>Forward PDF in Bot PM:</b> Instantly indexes chapter for Web Reader\n"
