@@ -170,16 +170,27 @@ def _send_single_manga(update_or_query, result: dict):
             buttons.append(row)
             row = []
 
-    # Add Web Reader & My Hub navigation row
-    buttons.append([
-        InlineKeyboardButton("🌐 Web Reader", web_app=WebAppInfo(url=f"{WEB_APP_URL}/reader?channel_id={cid}&ch=1")),
-        InlineKeyboardButton("🛸 My Hub", callback_data=f"hub_back:{user_id}")
-    ])
+    # Check if this is private chat or group
+    chat = getattr(update_or_query, "effective_chat", None) or (update_or_query.message.chat if getattr(update_or_query, "message", None) else None)
+    is_private = getattr(chat, "type", "private") == "private"
+    bot_username = "Galactic_Update_bot"
+
+    # Add Web Reader & My Hub navigation row (group-safe url buttons vs private web_app buttons)
+    if is_private:
+        buttons.append([
+            InlineKeyboardButton("🌐 Web Reader", web_app=WebAppInfo(url=f"{WEB_APP_URL}/reader?channel_id={cid}&ch=1")),
+            InlineKeyboardButton("🛸 My Hub", callback_data=f"hub_back:{user_id}")
+        ])
+    else:
+        buttons.append([
+            InlineKeyboardButton("🌐 Web Reader", url=f"https://t.me/{bot_username}?start=read_{cid}_1"),
+            InlineKeyboardButton("🛸 Web Hub", url=f"https://t.me/{bot_username}?start=webhub")
+        ])
 
     keyboard = InlineKeyboardMarkup(buttons)
     safe_name = html.escape(result.get("name", "Manga").title())
     total_chap = result.get("total_chapters")
-    chap_info = f" • <b>{total_chap}</b> chapters" if total_chap else ""
+    chap_info = f" • {total_chap} chapters" if total_chap else ""
 
     caption = (
         f"📚 <b>{safe_name}</b>{chap_info}\n"
@@ -207,25 +218,27 @@ def _send_single_manga(update_or_query, result: dict):
 
         # Sending new message (from command or search)
         msg = getattr(update_or_query, "message", None) or getattr(update_or_query, "effective_message", None)
-        chat = getattr(update_or_query, "effective_chat", None)
 
-        if result.get("image"):
+        photo_val = result.get("image")
+        if photo_val:
             try:
                 if msg:
-                    msg.reply_photo(photo=result["image"], caption=caption, parse_mode="HTML", reply_markup=keyboard)
+                    msg.reply_photo(photo=photo_val, caption=caption, parse_mode="HTML", reply_markup=keyboard)
                     return
                 elif chat:
-                    chat.send_photo(photo=result["image"], caption=caption, parse_mode="HTML", reply_markup=keyboard)
+                    chat.send_photo(photo=photo_val, caption=caption, parse_mode="HTML", reply_markup=keyboard)
                     return
-            except Exception:
+            except Exception as e:
                 pass
 
+        # Fallback to rich text message with cover banner
+        rich_caption = f"<a href='{WEB_APP_URL}/api/image/{cid}'>&#8205;</a>" + caption if cid else caption
         if msg:
-            msg.reply_text(caption, parse_mode="HTML", reply_markup=keyboard)
+            msg.reply_text(rich_caption, parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=False)
         elif chat:
-            chat.send_message(text=caption, parse_mode="HTML", reply_markup=keyboard)
+            chat.send_message(text=rich_caption, parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=False)
     except Exception as e:
-        send_message(update_or_query, f"<b>{safe_name}</b>\n📖 {channel_link}", parse_mode="HTML")
+        send_message(update_or_query, f"📚 <b>{safe_name}</b>\n📖 {channel_link}", reply_markup=keyboard, parse_mode="HTML")
 
 
 # =========================
