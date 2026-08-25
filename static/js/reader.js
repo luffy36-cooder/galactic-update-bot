@@ -1,21 +1,19 @@
 /**
- * 🌌 Manga Galactic — In-App Webtoon & Manga PDF Reader
- * Powered by Mozilla PDF.js (100% Client-Side Rendering — 0 Server Storage / RAM)
+ * 🌌 Manga Galactic — Ultra-Fast In-App Webtoon & Manga Reader
+ * Powered by Mozilla PDF.js (Optimized Client-Side Rendering + Zero-Latency Caching)
  */
 
 // Initialize Telegram WebApp SDK
 const tg = window.Telegram?.WebApp;
 if (tg) {
-  tg.ready();
-  tg.expand();
-  if (tg.disableVerticalSwipes) {
-    try { tg.disableVerticalSwipes(); } catch (e) {}
-  }
-  if (tg.requestFullscreen) {
-    try { tg.requestFullscreen(); } catch (e) {}
-  }
-  if (tg.setHeaderColor) tg.setHeaderColor('#000000');
-  if (tg.setBackgroundColor) tg.setBackgroundColor('#000000');
+  try {
+    tg.ready();
+    tg.expand();
+    if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
+    if (tg.requestFullscreen) tg.requestFullscreen();
+    if (tg.setHeaderColor) tg.setHeaderColor('#000000');
+    if (tg.setBackgroundColor) tg.setBackgroundColor('#000000');
+  } catch (e) {}
 }
 
 // PDF.js worker setup
@@ -24,7 +22,9 @@ if (window.pdfjsLib) {
     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
 
-// ⚡ IndexedDB Local Chapter Cache for Instant 0ms Re-reads & Offline Power
+// =========================================================
+// ⚡ IndexedDB Local Chapter Cache for Instant 0ms Re-reads
+// =========================================================
 const ChapterCache = {
   dbPromise: null,
   getDB() {
@@ -32,7 +32,7 @@ const ChapterCache = {
       this.dbPromise = new Promise((resolve) => {
         try {
           if (!window.indexedDB) return resolve(null);
-          const req = indexedDB.open('GalacticReaderDB', 1);
+          const req = indexedDB.open('GalacticReaderDB_v2', 1);
           req.onupgradeneeded = (e) => {
             const db = e.target.result;
             if (!db.objectStoreNames.contains('chapters')) {
@@ -80,7 +80,7 @@ const channelId = urlParams.get('cid') || urlParams.get('channel_id');
 let currentChapter = parseInt(urlParams.get('ch') || urlParams.get('chapter')) || 1;
 const currentUserId = tg?.initDataUnsafe?.user?.id || urlParams.get('user_id') || localStorage.getItem('galactic_user_id') || 6600689593;
 
-// Reader State
+// Reader Global State
 let pdfDoc = null;
 let totalPages = 0;
 let currentPageNum = 1;
@@ -88,11 +88,13 @@ let currentMode = 'webtoon'; // 'webtoon' | 'page'
 let mangaData = null;
 let availableChapters = [1];
 let renderedPages = new Set();
+let renderingPages = new Set();
+let activeRenderTasks = new Map(); // pageNum -> RenderTask
 let renderQueue = [];
 let isProcessingQueue = false;
-let isRenderingPage = false;
+let isRenderingFlipPage = false;
 let lastScrollTop = 0;
-let sweepInterval = null;
+let pageHeights = new Map(); // pageNum -> height
 
 // Width Presets for PC / Desktop
 const WIDTH_PRESETS = ['normal', 'compact', 'wide', 'full'];
@@ -103,7 +105,7 @@ let currentWidthPreset = localStorage.getItem('galactic_reader_width') || 'norma
 // =========================================================
 document.addEventListener('DOMContentLoaded', () => {
   if (!channelId) {
-    showErrorState('Invalid manga ID provided.');
+    showErrorState('Invalid manga channel ID provided.');
     return;
   }
 
@@ -131,17 +133,11 @@ function cycleReaderWidth() {
   };
   showToast(`📐 ${labels[nextPreset] || nextPreset}`);
 
-  if (currentMode === 'webtoon') {
-    // Refresh visible canvas scaling
+  if (currentMode === 'webtoon' && pdfDoc) {
+    // Re-render visible pages for new width
+    cancelAllActiveRenderTasks();
     renderedPages.clear();
-    const wrappers = document.querySelectorAll('.webtoon-page-wrapper');
-    wrappers.forEach(el => {
-      const pNum = parseInt(el.getAttribute('data-page-num'));
-      const rect = el.getBoundingClientRect();
-      if (rect.top < window.innerHeight + 600 && rect.bottom > -600) {
-        renderCanvasPage(pNum);
-      }
-    });
+    sweepVisiblePages();
   }
 }
 
@@ -159,35 +155,55 @@ function setupEventListeners() {
   const btnWebtoon = document.getElementById('btnModeWebtoon');
   const btnPage = document.getElementById('btnModePage');
 
-  btnWebtoon.addEventListener('click', () => setReaderMode('webtoon'));
-  btnPage.addEventListener('click', () => setReaderMode('page'));
+  if (btnWebtoon) btnWebtoon.addEventListener('click', () => setReaderMode('webtoon'));
+  if (btnPage) btnPage.addEventListener('click', () => setReaderMode('page'));
 
   // Chapter Dropdown Selector
   const chapterSelect = document.getElementById('chapterSelect');
-  chapterSelect.addEventListener('change', (e) => {
-    currentChapter = parseInt(e.target.value);
-    loadChapterPdf();
-  });
+  if (chapterSelect) {
+    chapterSelect.addEventListener('change', (e) => {
+      currentChapter = parseInt(e.target.value);
+      loadChapterPdf();
+    });
+  }
 
   // Chapter Prev / Next Buttons
-  document.getElementById('btnPrevChapter').addEventListener('click', goToPrevChapter);
-  document.getElementById('btnNextChapter').addEventListener('click', goToNextChapter);
+  const btnPrev = document.getElementById('btnPrevChapter');
+  const btnNext = document.getElementById('btnNextChapter');
+  if (btnPrev) btnPrev.addEventListener('click', goToPrevChapter);
+  if (btnNext) btnNext.addEventListener('click', goToNextChapter);
 
   // Quick Bookmark Button
-  document.getElementById('btnQuickBookmark').addEventListener('click', triggerManualBookmark);
+  const btnBm = document.getElementById('btnQuickBookmark');
+  if (btnBm) btnBm.addEventListener('click', triggerManualBookmark);
 
   // Fullscreen Button
-  document.getElementById('btnFullscreen').addEventListener('click', () => toggleImmersiveZenMode());
+  const btnFs = document.getElementById('btnFullscreen');
+  if (btnFs) btnFs.addEventListener('click', () => toggleImmersiveZenMode());
 
   // Page Flip Tap Zones
-  document.getElementById('tapLeft').addEventListener('click', () => changeFlipPage(-1));
-  document.getElementById('tapRight').addEventListener('click', () => changeFlipPage(1));
+  const tapL = document.getElementById('tapLeft');
+  const tapR = document.getElementById('tapRight');
+  if (tapL) tapL.addEventListener('click', () => changeFlipPage(-1));
+  if (tapR) tapR.addEventListener('click', () => changeFlipPage(1));
 
-  // Tap & Double-Tap detection for 100% pure Manhwa Immersive Mode
+  // Tap detection for Immersive Zen Mode
   setupImmersiveTapHandlers();
 
   // Auto-hide toolbar on scroll
   window.addEventListener('scroll', handleToolbarScroll, { passive: true });
+
+  // Handle window resize cleanly
+  let resizeTimeout;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+      if (pdfDoc && currentMode === 'webtoon') {
+        renderedPages.clear();
+        sweepVisiblePages();
+      }
+    }, 250);
+  });
 
   // ⌨️ PC / Laptop Keyboard Shortcuts
   window.addEventListener('keydown', (e) => {
@@ -222,7 +238,8 @@ async function loadMangaChapterMeta() {
       mangaData = data;
       availableChapters = data.chapters || [1];
 
-      document.getElementById('readerMangaTitle').textContent = data.name;
+      const titleEl = document.getElementById('readerMangaTitle');
+      if (titleEl) titleEl.textContent = data.name;
       document.title = `${data.name} — Ch. ${currentChapter} | Manga Galactic`;
 
       populateChapterDropdown();
@@ -232,30 +249,51 @@ async function loadMangaChapterMeta() {
     }
   } catch (err) {
     console.error('Failed to load chapter metadata:', err);
-    loadChapterPdf(); // Attempt direct load
+    loadChapterPdf();
   }
 }
 
 function populateChapterDropdown() {
   const select = document.getElementById('chapterSelect');
+  if (!select) return;
   select.innerHTML = availableChapters.map(ch =>
     `<option value="${ch}" ${ch === currentChapter ? 'selected' : ''}>Chapter ${ch}</option>`
   ).join('');
 }
 
 // =========================================================
-// 📄 Stream & Render Chapter PDF (via PDF.js)
+// 📄 Stream & Render Chapter PDF (High Speed + Zero Latency)
 // =========================================================
+function cancelAllActiveRenderTasks() {
+  for (const [pNum, task] of activeRenderTasks.entries()) {
+    try {
+      if (task && typeof task.cancel === 'function') {
+        task.cancel();
+      }
+    } catch (e) {}
+  }
+  activeRenderTasks.clear();
+  renderingPages.clear();
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 MB';
+  const mb = bytes / (1024 * 1024);
+  return `${mb.toFixed(1)} MB`;
+}
+
 async function loadChapterPdf() {
-  showLoader(true, `Loading Chapter ${currentChapter}...`);
+  showLoader(true, `Loading Chapter ${currentChapter}...`, 'Connecting to stream...');
+  cancelAllActiveRenderTasks();
   renderedPages.clear();
+  renderingPages.clear();
   renderQueue = [];
   isProcessingQueue = false;
 
   if (pdfDoc) {
     try { pdfDoc.destroy(); } catch (e) {}
+    pdfDoc = null;
   }
-  pdfDoc = null;
 
   const select = document.getElementById('chapterSelect');
   if (select) select.value = currentChapter;
@@ -269,14 +307,15 @@ async function loadChapterPdf() {
     // 1. ⚡ Instant 0ms IndexedDB Local Cache Check
     const cachedBuffer = await ChapterCache.get(cacheKey);
     if (cachedBuffer && cachedBuffer.byteLength > 5000) {
+      updateLoaderProgress(100, `Cached in Device • ${formatBytes(cachedBuffer.byteLength)}`);
       pdfData = new Uint8Array(cachedBuffer);
     } else {
-      // 2. 🚀 Single High-Speed Direct Stream with Live Chunk Download
+      // 2. 🚀 High-Speed Progressive Stream with Real-Time Byte Counting
       const response = await fetch(pdfUrl);
       if (!response.ok) {
         let errData = {};
         try { errData = await response.json(); } catch (e) {}
-        throw new Error(errData.error || `Failed to fetch chapter (HTTP ${response.status})`);
+        throw new Error(errData.error || `Server responded with HTTP ${response.status}`);
       }
 
       const contentLength = response.headers.get('content-length');
@@ -294,10 +333,9 @@ async function loadChapterPdf() {
 
         if (totalBytes > 0) {
           const percent = Math.min(Math.round((loadedBytes / totalBytes) * 100), 99);
-          const bar = document.getElementById('loadProgress');
-          const text = document.getElementById('loaderStatusText');
-          if (bar) bar.style.width = `${percent}%`;
-          if (text) text.textContent = `Downloading Chapter ${currentChapter} (${percent}%)...`;
+          updateLoaderProgress(percent, `${percent}% • ${formatBytes(loadedBytes)} / ${formatBytes(totalBytes)}`);
+        } else {
+          updateLoaderProgress(50, `Streaming • ${formatBytes(loadedBytes)} downloaded`);
         }
       }
 
@@ -314,8 +352,8 @@ async function loadChapterPdf() {
       ChapterCache.set(cacheKey, fullBuffer.buffer);
     }
 
-    const text = document.getElementById('loaderStatusText');
-    if (text) text.textContent = `Rendering Chapter ${currentChapter}...`;
+    showLoader(true, `Rendering Chapter ${currentChapter}...`, 'Parsing PDF structure...');
+    updateLoaderProgress(100, 'Parsing pages...');
 
     pdfDoc = await window.pdfjsLib.getDocument({
       data: pdfData,
@@ -326,6 +364,8 @@ async function loadChapterPdf() {
     }).promise;
 
     totalPages = pdfDoc.numPages;
+    if (totalPages === 0) throw new Error('PDF document has 0 pages.');
+
     showLoader(false);
 
     // Render based on current reading mode
@@ -350,37 +390,53 @@ async function loadChapterPdf() {
     console.error('PDF load error:', err);
     const socialSec = document.getElementById('chapterSocialSection');
     if (socialSec) socialSec.style.display = 'none';
+
     try {
       const errRes = await fetch(pdfUrl);
       const errData = await errRes.json();
-      showErrorState(errData.error || `Chapter ${currentChapter} is available in Telegram channel.`, errData.channel_link || mangaData?.channel_link);
+      showErrorState(errData.error || `Chapter ${currentChapter} is available in the Telegram channel.`, errData.channel_link || mangaData?.channel_link);
     } catch (e) {
-      showErrorState(`Chapter ${currentChapter} is available in Telegram channel.`, mangaData?.channel_link);
+      showErrorState(`Chapter ${currentChapter} is available in the Telegram channel.`, mangaData?.channel_link);
     }
   }
+}
+
+function updateLoaderProgress(percent, subText) {
+  const bar = document.getElementById('loadProgress');
+  const sub = document.getElementById('loaderSubText');
+  if (bar) bar.style.width = `${percent}%`;
+  if (sub && subText) sub.textContent = subText;
 }
 
 function prefetchNextChapter() {
   const idx = availableChapters.indexOf(currentChapter);
   if (idx !== -1 && idx < availableChapters.length - 1) {
     const nextChap = availableChapters[idx + 1];
-    // Background cache warm on server & browser
-    fetch(`/api/chapter/file/${channelId}/${nextChap}`).then(async res => {
-      if (res.ok) {
-        const buf = await res.arrayBuffer();
-        if (buf && buf.byteLength > 5000) {
-          ChapterCache.set(`${channelId}_${nextChap}`, buf);
-        }
+    const cacheKey = `${channelId}_${nextChap}`;
+
+    ChapterCache.get(cacheKey).then(cached => {
+      if (!cached) {
+        fetch(`/api/chapter/file/${channelId}/${nextChap}`).then(async res => {
+          if (res.ok) {
+            const buf = await res.arrayBuffer();
+            if (buf && buf.byteLength > 5000) {
+              ChapterCache.set(cacheKey, buf);
+            }
+          }
+        }).catch(() => {});
       }
     }).catch(() => {});
   }
 }
 
 // =========================================================
-// 📜 Webtoon Mode (Continuous Vertical Scroll with Sub-30ms Rendering)
+// 📜 Webtoon Mode (Continuous Vertical Scroll with Zero Blank Issues)
 // =========================================================
+let webtoonObserver = null;
+
 function renderWebtoonMode() {
   const container = document.getElementById('webtoonContainer');
+  if (!container) return;
   container.innerHTML = '';
 
   for (let i = 1; i <= totalPages; i++) {
@@ -389,42 +445,52 @@ function renderWebtoonMode() {
     pageWrapper.id = `page-wrap-${i}`;
     pageWrapper.setAttribute('data-page-num', i);
 
-    // Initial placeholder with aspect ratio
-    pageWrapper.style.minHeight = '300px';
+    // Initial placeholder height to prevent layout jumps
+    pageWrapper.style.minHeight = pageHeights.get(i) ? `${pageHeights.get(i)}px` : '400px';
+
+    // Page skeleton shimmer
+    const skeleton = document.createElement('div');
+    skeleton.className = 'page-skeleton-placeholder';
+    skeleton.id = `skeleton-page-${i}`;
+    skeleton.innerHTML = `<span>Page ${i}</span>`;
 
     const canvas = document.createElement('canvas');
     canvas.className = 'webtoon-page-canvas';
     canvas.id = `canvas-page-${i}`;
 
+    pageWrapper.appendChild(skeleton);
     pageWrapper.appendChild(canvas);
     container.appendChild(pageWrapper);
   }
 
-  // Setup Lazy Page Intersection Observer with 2400px aggressive pre-buffering
+  // Setup Lazy Page Intersection Observer
   setupPageIntersectionObserver();
   updatePageIndicator(1);
 
-  // ⚡ Immediately queue and render initial pages
+  // Immediately render the first 3 pages
   queuePageRender(1);
   if (totalPages >= 2) queuePageRender(2);
   if (totalPages >= 3) queuePageRender(3);
 }
 
 function setupPageIntersectionObserver() {
-  const observer = new IntersectionObserver((entries) => {
+  if (webtoonObserver) {
+    webtoonObserver.disconnect();
+  }
+
+  webtoonObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       const pageNum = parseInt(entry.target.getAttribute('data-page-num'));
 
       if (entry.isIntersecting) {
-        // Update visible page indicator
         updatePageIndicator(pageNum);
 
-        // Pre-render page canvas smoothly before scroll
+        // Pre-render current page
         if (!renderedPages.has(pageNum)) {
           queuePageRender(pageNum);
         }
 
-        // Background pipeline for adjacent pages
+        // Aggressively pre-render upcoming pages
         for (let offset = 1; offset <= 3; offset++) {
           const nextP = pageNum + offset;
           if (nextP <= totalPages && !renderedPages.has(nextP)) {
@@ -434,22 +500,18 @@ function setupPageIntersectionObserver() {
       }
     });
   }, {
-    rootMargin: '2400px 0px 2400px 0px', // Pre-render 2400px ahead for instant 0ms scroll buffer
+    rootMargin: '1800px 0px 1800px 0px', // Buffer 1800px ahead
     threshold: 0.01
   });
 
-  document.querySelectorAll('.webtoon-page-wrapper').forEach(el => observer.observe(el));
-
-  // Fallback safety sweep: ensures 0 blank pages on fast scroll
-  if (sweepInterval) clearInterval(sweepInterval);
-  sweepInterval = setInterval(sweepVisiblePages, 1000);
+  document.querySelectorAll('.webtoon-page-wrapper').forEach(el => webtoonObserver.observe(el));
 }
 
 function sweepVisiblePages() {
   const wrappers = document.querySelectorAll('.webtoon-page-wrapper');
   wrappers.forEach(el => {
     const pNum = parseInt(el.getAttribute('data-page-num'));
-    if (!renderedPages.has(pNum)) {
+    if (!renderedPages.has(pNum) && !renderingPages.has(pNum)) {
       const rect = el.getBoundingClientRect();
       if (rect.top < window.innerHeight + 1600 && rect.bottom > -1600) {
         queuePageRender(pNum);
@@ -459,7 +521,7 @@ function sweepVisiblePages() {
 }
 
 function queuePageRender(pageNum) {
-  if (!pdfDoc || renderedPages.has(pageNum) || renderQueue.includes(pageNum)) return;
+  if (!pdfDoc || renderedPages.has(pageNum) || renderingPages.has(pageNum) || renderQueue.includes(pageNum)) return;
   renderQueue.push(pageNum);
   processRenderQueue();
 }
@@ -470,7 +532,7 @@ async function processRenderQueue() {
 
   while (renderQueue.length > 0) {
     const pageNum = renderQueue.shift();
-    if (!renderedPages.has(pageNum)) {
+    if (!renderedPages.has(pageNum) && !renderingPages.has(pageNum)) {
       await renderCanvasPage(pageNum);
     }
   }
@@ -479,43 +541,137 @@ async function processRenderQueue() {
 }
 
 async function renderCanvasPage(pageNum) {
-  if (!pdfDoc || renderedPages.has(pageNum)) return;
-  renderedPages.add(pageNum);
+  if (!pdfDoc || renderedPages.has(pageNum) || renderingPages.has(pageNum)) return;
+  renderingPages.add(pageNum);
 
   try {
     const page = await pdfDoc.getPage(pageNum);
     const canvas = document.getElementById(`canvas-page-${pageNum}`);
     const wrapper = document.getElementById(`page-wrap-${pageNum}`);
-    if (!canvas) return;
-
-    // ⚡ Hardware GPU Accelerated 2D context with alpha:false and desynchronized low latency
-    const ctx = canvas.getContext('2d', {
-      alpha: false,
-      desynchronized: true,
-      willReadFrequently: false
-    });
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'medium';
-
-    const container = document.getElementById('webtoonContainer');
-    const targetWidth = container ? Math.min(container.clientWidth || 740, 1000) : Math.min(window.innerWidth || 740, 740);
-    const unscaledViewport = page.getViewport({ scale: 1 });
-
-    // Set wrapper aspect-ratio to prevent layout shifts
-    if (wrapper && unscaledViewport.width && unscaledViewport.height) {
-      const aspectRatio = unscaledViewport.height / unscaledViewport.width;
-      wrapper.style.minHeight = `${Math.round(targetWidth * aspectRatio)}px`;
+    const skeleton = document.getElementById(`skeleton-page-${pageNum}`);
+    if (!canvas || !wrapper) {
+      renderingPages.delete(pageNum);
+      return;
     }
 
-    // High performance DPR capped at 1.25 for crisp Retina quality and ultra-fast sub-30ms painting
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.25);
+    const container = document.getElementById('webtoonContainer');
+    const containerWidth = container ? container.clientWidth : 0;
+    const targetWidth = Math.max(300, Math.min(containerWidth || window.innerWidth || 740, 1000));
+    const unscaledViewport = page.getViewport({ scale: 1 });
+
+    if (!unscaledViewport.width || !unscaledViewport.height) {
+      renderingPages.delete(pageNum);
+      return;
+    }
+
+    const aspectRatio = unscaledViewport.height / unscaledViewport.width;
+    const computedHeight = Math.round(targetWidth * aspectRatio);
+    pageHeights.set(pageNum, computedHeight);
+
+    // Capped DPR (max 1.5) for optimal Retina sharpness, ultra-fast painting & low VRAM
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     const scale = (targetWidth / unscaledViewport.width) * dpr;
     const viewport = page.getViewport({ scale: scale });
 
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
+    // Set canvas dimensions
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
     canvas.style.width = '100%';
     canvas.style.height = 'auto';
+
+    // Standard 2D context (without desynchronized to eliminate blank screen bug)
+    const ctx = canvas.getContext('2d', { alpha: false });
+    // Fill canvas background to prevent black/transparent holes
+    ctx.fillStyle = '#11121d';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Cancel any previous render task on this page
+    if (activeRenderTasks.has(pageNum)) {
+      try { activeRenderTasks.get(pageNum).cancel(); } catch (e) {}
+      activeRenderTasks.delete(pageNum);
+    }
+
+    const renderTask = page.render({
+      canvasContext: ctx,
+      viewport: viewport,
+      intent: 'display'
+    });
+
+    activeRenderTasks.set(pageNum, renderTask);
+    await renderTask.promise;
+
+    activeRenderTasks.delete(pageNum);
+    renderedPages.add(pageNum);
+    renderingPages.delete(pageNum);
+
+    // Fade out and remove skeleton placeholder
+    if (skeleton) {
+      skeleton.classList.add('fade-out');
+      setTimeout(() => skeleton.remove(), 300);
+    }
+
+    // Lock wrapper height to match rendered height
+    wrapper.style.minHeight = `${computedHeight}px`;
+
+    // 🧹 Virtual Memory Windowing for long chapters (>30 pages)
+    pruneOffscreenCanvases(pageNum);
+
+  } catch (err) {
+    activeRenderTasks.delete(pageNum);
+    renderingPages.delete(pageNum);
+    if (err.name !== 'RenderingCancelledException') {
+      console.warn(`Render error on page ${pageNum}:`, err);
+    }
+  }
+}
+
+function pruneOffscreenCanvases(currentPage) {
+  if (totalPages <= 30 || renderedPages.size <= 24) return;
+
+  renderedPages.forEach(p => {
+    if (Math.abs(p - currentPage) > 10) {
+      const canvas = document.getElementById(`canvas-page-${p}`);
+      const wrapper = document.getElementById(`page-wrap-${p}`);
+      if (canvas && wrapper) {
+        // Free GPU memory while maintaining scroll height
+        canvas.width = 1;
+        canvas.height = 1;
+        renderedPages.delete(p);
+      }
+    }
+  });
+}
+
+// =========================================================
+// 📖 Page Flip Mode
+// =========================================================
+async function renderPageFlipMode() {
+  if (!pdfDoc || isRenderingFlipPage) return;
+  isRenderingFlipPage = true;
+
+  try {
+    const page = await pdfDoc.getPage(currentPageNum);
+    const canvas = document.getElementById('flipCanvas');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const viewportHeight = Math.max(300, window.innerHeight - 130);
+    const viewportWidth = Math.max(300, window.innerWidth - 20);
+    const unscaledViewport = page.getViewport({ scale: 1 });
+
+    const scaleX = viewportWidth / unscaledViewport.width;
+    const scaleY = viewportHeight / unscaledViewport.height;
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const scale = Math.min(scaleX, scaleY) * dpr;
+    const viewport = page.getViewport({ scale: scale });
+
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    canvas.style.width = `${Math.floor(viewport.width / dpr)}px`;
+    canvas.style.height = `${Math.floor(viewport.height / dpr)}px`;
+
+    ctx.fillStyle = '#11121d';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     await page.render({
       canvasContext: ctx,
@@ -523,52 +679,13 @@ async function renderCanvasPage(pageNum) {
       intent: 'display'
     }).promise;
 
-    // Reset placeholder minHeight once rendered
-    if (wrapper) wrapper.style.minHeight = 'auto';
-
-  } catch (err) {
-    console.error(`Failed to render page ${pageNum}:`, err);
-    // Allow automatic retry on scroll or sweep
-    renderedPages.delete(pageNum);
-  }
-}
-
-// =========================================================
-// 📖 Page Flip Mode
-// =========================================================
-async function renderPageFlipMode() {
-  if (!pdfDoc || isRenderingPage) return;
-  isRenderingPage = true;
-
-  try {
-    const page = await pdfDoc.getPage(currentPageNum);
-    const canvas = document.getElementById('flipCanvas');
-    const ctx = canvas.getContext('2d');
-
-    const viewportHeight = window.innerHeight - 130;
-    const viewportWidth = window.innerWidth - 20;
-    const unscaledViewport = page.getViewport({ scale: 1 });
-
-    const scaleX = viewportWidth / unscaledViewport.width;
-    const scaleY = viewportHeight / unscaledViewport.height;
-    const scale = Math.min(scaleX, scaleY) * (window.devicePixelRatio || 1);
-    const viewport = page.getViewport({ scale: scale });
-
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    canvas.style.width = `${viewport.width / (window.devicePixelRatio || 1)}px`;
-    canvas.style.height = `${viewport.height / (window.devicePixelRatio || 1)}px`;
-
-    await page.render({
-      canvasContext: ctx,
-      viewport: viewport
-    }).promise;
-
     updatePageIndicator(currentPageNum);
   } catch (err) {
-    console.error('Page Flip render error:', err);
+    if (err.name !== 'RenderingCancelledException') {
+      console.error('Page Flip render error:', err);
+    }
   } finally {
-    isRenderingPage = false;
+    isRenderingFlipPage = false;
   }
 }
 
@@ -590,19 +707,23 @@ function changeFlipPage(delta) {
 // =========================================================
 function setReaderMode(mode) {
   currentMode = mode;
-  document.getElementById('btnModeWebtoon').classList.toggle('active', mode === 'webtoon');
-  document.getElementById('btnModePage').classList.toggle('active', mode === 'page');
+  cancelAllActiveRenderTasks();
+
+  const btnWebtoon = document.getElementById('btnModeWebtoon');
+  const btnPage = document.getElementById('btnModePage');
+  if (btnWebtoon) btnWebtoon.classList.toggle('active', mode === 'webtoon');
+  if (btnPage) btnPage.classList.toggle('active', mode === 'page');
 
   const webtoonView = document.getElementById('webtoonContainer');
   const pageView = document.getElementById('pageFlipContainer');
 
   if (mode === 'webtoon') {
-    webtoonView.style.display = 'flex';
-    pageView.style.display = 'none';
+    if (webtoonView) webtoonView.style.display = 'flex';
+    if (pageView) pageView.style.display = 'none';
     if (pdfDoc) renderWebtoonMode();
   } else {
-    webtoonView.style.display = 'none';
-    pageView.style.display = 'flex';
+    if (webtoonView) webtoonView.style.display = 'none';
+    if (pageView) pageView.style.display = 'flex';
     if (pdfDoc) renderPageFlipMode();
   }
 
@@ -686,12 +807,19 @@ function updatePageIndicator(page) {
   if (el) el.textContent = `Page ${page} / ${totalPages || 1}`;
 }
 
-function showLoader(show, text) {
+function showLoader(show, text, subText) {
   const loader = document.getElementById('readerLoader');
   const errorCard = document.getElementById('readerErrorState');
   if (loader) loader.style.display = show ? 'flex' : 'none';
   if (errorCard && show) errorCard.style.display = 'none';
-  if (text) document.getElementById('loaderStatusText').textContent = text;
+  if (text) {
+    const t = document.getElementById('loaderStatusText');
+    if (t) t.textContent = text;
+  }
+  if (subText) {
+    const st = document.getElementById('loaderSubText');
+    if (st) st.textContent = subText;
+  }
 }
 
 function showErrorState(msg, channelLink) {
@@ -737,11 +865,11 @@ function handleToolbarScroll() {
   const footer = document.getElementById('readerFooter');
 
   if (st > lastScrollTop && st > 100) {
-    navbar.classList.add('hidden');
-    footer.classList.add('hidden');
+    if (navbar) navbar.classList.add('hidden');
+    if (footer) footer.classList.add('hidden');
   } else {
-    navbar.classList.remove('hidden');
-    footer.classList.remove('hidden');
+    if (navbar) navbar.classList.remove('hidden');
+    if (footer) footer.classList.remove('hidden');
   }
   lastScrollTop = st <= 0 ? 0 : st;
 }
@@ -765,19 +893,14 @@ function toggleImmersiveZenMode(forceState = null) {
   const body = document.body;
 
   if (isImmersiveMode) {
-    // 🌌 Enter True Immersive Zen Mode (Hide all bars & phone status bar)
     navbar?.classList.add('hidden');
     footer?.classList.add('hidden');
     body.classList.add('zen-immersive-mode');
 
-    // 1. Telegram Fullscreen SDK (Hides Telegram close bar + Android status bar)
     if (window.Telegram?.WebApp?.requestFullscreen) {
-      try {
-        window.Telegram.WebApp.requestFullscreen();
-      } catch (e) {}
+      try { window.Telegram.WebApp.requestFullscreen(); } catch (e) {}
     }
 
-    // 2. HTML5 System Fullscreen (Hides Android navigation buttons)
     if (!document.fullscreenElement) {
       try {
         if (document.documentElement.requestFullscreen) {
@@ -790,21 +913,16 @@ function toggleImmersiveZenMode(forceState = null) {
 
     showToast('🌌 Pure Manhwa Mode (Tap to show controls)');
   } else {
-    // ☀️ Restore toolbars & Telegram controls
     navbar?.classList.remove('hidden');
     footer?.classList.remove('hidden');
     body.classList.remove('zen-immersive-mode');
 
     if (window.Telegram?.WebApp?.exitFullscreen && window.Telegram.WebApp.isFullscreen) {
-      try {
-        window.Telegram.WebApp.exitFullscreen();
-      } catch (e) {}
+      try { window.Telegram.WebApp.exitFullscreen(); } catch (e) {}
     }
 
     if (document.fullscreenElement && document.exitFullscreen) {
-      try {
-        document.exitFullscreen().catch(() => {});
-      } catch (e) {}
+      try { document.exitFullscreen().catch(() => {}); } catch (e) {}
     }
   }
 }
@@ -813,7 +931,6 @@ function setupImmersiveTapHandlers() {
   const viewport = document.getElementById('readerViewport');
   if (!viewport) return;
 
-  // Touch handling on mobile: Detect clean tap vs scroll
   viewport.addEventListener('touchstart', (e) => {
     if (e.touches.length === 1) {
       touchStartX = e.touches[0].clientX;
@@ -823,7 +940,6 @@ function setupImmersiveTapHandlers() {
   }, { passive: true });
 
   viewport.addEventListener('touchend', (e) => {
-    // Ignore interactive UI components
     if (e.target.closest('button, input, select, textarea, .comment-card-item, .reaction-pill-btn, .modal-card, .social-box-header, .comment-input-wrap, a, .chapter-reactions-box, .chapter-comments-box')) {
       return;
     }
@@ -833,14 +949,12 @@ function setupImmersiveTapHandlers() {
       const deltaY = Math.abs(e.changedTouches[0].clientY - touchStartY);
       const duration = Date.now() - touchStartTime;
 
-      // Clean tap without significant drag/scroll
       if (deltaX < 14 && deltaY < 14 && duration < 320) {
         toggleImmersiveZenMode();
       }
     }
   });
 
-  // Desktop click handler on canvas/viewport
   viewport.addEventListener('click', (e) => {
     if (e.target.closest('button, input, select, textarea, .comment-card-item, .reaction-pill-btn, .modal-card, .social-box-header, .comment-input-wrap, a, .chapter-reactions-box, .chapter-comments-box')) {
       return;

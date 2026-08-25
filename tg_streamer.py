@@ -48,6 +48,13 @@ class MTProtoStreamer:
         self.loop.run_until_complete(_connect())
         self.loop.run_forever()
 
+    def prefetch_pdf_async(self, channel_id: int, msg_id: int):
+        """Asynchronously pre-caches a chapter PDF in the background."""
+        cache_path = os.path.join(CACHE_DIR, f"{channel_id}_{msg_id}.pdf")
+        if os.path.exists(cache_path) and os.path.getsize(cache_path) > 5000:
+            return
+        threading.Thread(target=self.get_or_download_pdf, args=(channel_id, msg_id), daemon=True).start()
+
     def get_or_download_pdf(self, channel_id: int, msg_id: int) -> str:
         """Downloads and caches the PDF on disk with thread-safe de-duplication, returning file path."""
         os.makedirs(CACHE_DIR, exist_ok=True)
@@ -73,13 +80,16 @@ class MTProtoStreamer:
         try:
             async def _download():
                 try:
+                    if not self.client.is_connected():
+                        await self.client.connect()
                     msg = await self.client.get_messages(channel_id, ids=msg_id)
                     if msg and msg.document:
                         temp_path = f"{cache_path}.tmp"
                         await self.client.download_media(msg.document, file=temp_path)
                         if os.path.exists(temp_path) and os.path.getsize(temp_path) > 5000:
                             if os.path.exists(cache_path):
-                                os.remove(cache_path)
+                                try: os.remove(cache_path)
+                                except Exception: pass
                             os.rename(temp_path, cache_path)
                     else:
                         logger.warning(f"No document found on msg_id {msg_id} in channel {channel_id}")

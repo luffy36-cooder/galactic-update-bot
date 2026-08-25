@@ -620,6 +620,14 @@ def register_web_routes(app, bot_getter=None):
                 streamer = get_streamer()
                 file_path = streamer.get_or_download_pdf(channel_id, msg_id)
                 if file_path and os.path.exists(file_path):
+                    # Proactively pre-cache the next chapter in background
+                    try:
+                        next_doc = get_chapter_file(channel_id, chapter + 1)
+                        if next_doc and next_doc.get("msg_id"):
+                            streamer.prefetch_pdf_async(channel_id, next_doc["msg_id"])
+                    except Exception:
+                        pass
+
                     resp = send_file(
                         file_path,
                         mimetype="application/pdf",
