@@ -87,6 +87,8 @@ from user_lists_handler import (
     hold_cmd,
     drop_cmd,
     currentlyreading_cmd,
+    myhub_cmd,
+    hub_cmd,
 )
 
 # 🔘 Callbacks
@@ -176,6 +178,8 @@ def main():
     dp.add_handler(CommandHandler("replyreq", replyreq_cmd))
 
     # 📚 User List Commands
+    dp.add_handler(CommandHandler("myhub", myhub_cmd))
+    dp.add_handler(CommandHandler("hub", hub_cmd))
     dp.add_handler(CommandHandler("read", read_cmd))
     dp.add_handler(CommandHandler("readlist", readlist_cmd))
     dp.add_handler(CommandHandler("fav", fav_cmd))
@@ -194,14 +198,13 @@ def main():
     # 🔁 Callback Handlers
     dp.add_handler(CallbackQueryHandler(help_button_handler, pattern="^help_"))
     dp.add_handler(CallbackQueryHandler(handle_bookmark_buttons, pattern="^bm_"))
-    dp.add_handler(CallbackQueryHandler(handle_status_buttons, pattern="^(read|unread|fav|unfav|complete|uncomplete|drop|undrop|hold|unhold|view|showrate|setrate|subtoggle)_"))
+    dp.add_handler(CallbackQueryHandler(handle_status_buttons, pattern="^(read|unread|fav|unfav|complete|uncomplete|drop|undrop|hold|unhold|view|showrate|setrate|subtoggle|hub_)"))
     dp.add_handler(CallbackQueryHandler(handle_request_callbacks, pattern="^req_"))
     dp.add_handler(CallbackQueryHandler(select_manga_callback, pattern=r"^select_"))
 
-    # 🔍 Inline Search & Group Text Search
+    # 🔍 Inline Search & Group/DM Text Search
     dp.add_handler(InlineQueryHandler(inline_query))
-    dp.add_handler(MessageHandler(Filters.text & Filters.chat_type.groups & (~Filters.command), search_by_text_if_enabled))
-    dp.add_handler(MessageHandler(Filters.text & Filters.chat_type.private & (~Filters.command), request_manga))
+    dp.add_handler(MessageHandler(Filters.text & (~Filters.command), search_by_text_if_enabled))
 
     # 🖼 Media/Posts & Chapter Indexer
     dp.add_handler(MessageHandler(Filters.photo, handle_image))
@@ -229,6 +232,7 @@ def main():
 
         user_cmds = [
             BotCommand("start", "🚀 Start Bot & Mini App"),
+            BotCommand("myhub", "🛸 Personal Reading Hub"),
             BotCommand("web", "🌐 Open Manga Catalog & Live Reader"),
             BotCommand("webprofile", "👤 Visual Reading Profile"),
             BotCommand("manga", "🔍 Search 136+ Manga & Manhwa"),
@@ -244,6 +248,7 @@ def main():
 
         admin_cmds = [
             BotCommand("start", "🚀 Start Bot & Mini App"),
+            BotCommand("myhub", "🛸 Personal Reading Hub"),
             BotCommand("web", "🌐 Manga Catalog & Live Reader"),
             BotCommand("webprofile", "👤 Visual Reading Profile"),
             BotCommand("manga", "🔍 Search Manga"),

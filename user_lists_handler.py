@@ -85,3 +85,67 @@ def mylist_cmd(update: Update, context: CallbackContext):
         f"⏸️ <b>On Hold:</b>\n{format_manga_list(lists['hold'])}"
     )
     update.message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
+
+
+# =========================================================
+# 🛸 /myhub & /hub — Personal Interactive Manga Hub Dashboard
+# =========================================================
+def hub_cmd(update: Update, context: CallbackContext):
+    myhub_cmd(update, context)
+
+
+def myhub_cmd(update: Update, context: CallbackContext):
+    import html
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+    from config import WEB_APP_URL
+    from database import get_user_bookmarks, get_user_badges
+
+    user = update.effective_user
+    user_id = user.id
+    lists = get_user_manga_lists(user_id)
+    bookmarks = get_user_bookmarks(user_id)
+    badges = get_user_badges(user_id)
+
+    read_count = len(lists.get("read", []))
+    fav_count = len(lists.get("favorite", []))
+    comp_count = len(lists.get("completed", []))
+    hold_count = len(lists.get("hold", []))
+    drop_count = len(lists.get("dropped", []))
+    bm_count = len(bookmarks)
+    badge_str = " ".join(badges) if badges else "🎖️ Explorer"
+
+    text = (
+        f"🛸 <b>Personal Manga Hub</b> 🌌\n\n"
+        f"👤 <b>Reader:</b> {html.escape(user.full_name)}\n"
+        f"🏅 <b>Badges:</b> {badge_str}\n\n"
+        f"📊 <b>Your Reading Shelves:</b>\n"
+        f"• 📖 Read: <b>{read_count}</b> titles\n"
+        f"• ❤️ Favorites: <b>{fav_count}</b> titles\n"
+        f"• 🏁 Completed: <b>{comp_count}</b> titles\n"
+        f"• ⏸️ On Hold: <b>{hold_count}</b> titles\n"
+        f"• 👋 Dropped: <b>{drop_count}</b> titles\n"
+        f"• 📌 Bookmarks: <b>{bm_count}</b> chapters\n\n"
+        f"<i>Tap any shelf below to view your manga:</i>"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(f"📖 Read ({read_count})", callback_data=f"hub_shelf:read:{user_id}"),
+            InlineKeyboardButton(f"❤️ Favorites ({fav_count})", callback_data=f"hub_shelf:favorite:{user_id}")
+        ],
+        [
+            InlineKeyboardButton(f"🏁 Completed ({comp_count})", callback_data=f"hub_shelf:completed:{user_id}"),
+            InlineKeyboardButton(f"⏸️ On Hold ({hold_count})", callback_data=f"hub_shelf:hold:{user_id}")
+        ],
+        [
+            InlineKeyboardButton(f"👋 Dropped ({drop_count})", callback_data=f"hub_shelf:dropped:{user_id}"),
+            InlineKeyboardButton(f"📌 Bookmarks ({bm_count})", callback_data="bm_list_0")
+        ],
+        [
+            InlineKeyboardButton("👤 Visual Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/profile?user_id={user_id}")),
+            InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat="")
+        ]
+    ])
+
+    update.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+

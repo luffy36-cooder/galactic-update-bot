@@ -14,7 +14,9 @@ from database import (
     get_manga_rating_summary,
     subscribe_manga,
     unsubscribe_manga,
-    is_user_subscribed
+    is_user_subscribed,
+    get_user_bookmarks,
+    get_user_badges
 )
 from config import LOG_CHANNEL_ID, WEB_APP_URL
 
@@ -74,6 +76,91 @@ def handle_status_buttons(update: Update, context: CallbackContext):
         except Exception as e:
             logger.error(f"⚠️ Failed to handle view_mylist: {e}")
             query.answer("⚠️ Something went wrong.", show_alert=True)
+        return
+
+    # 1b. Handle Hub Shelves (hub_shelf:<shelf>:<target_id>)
+    if data.startswith("hub_shelf:"):
+        try:
+            parts = data.split(":")
+            if len(parts) >= 3:
+                shelf = parts[1]
+                target_id = parts[2]
+                if str(user_id) != target_id:
+                    query.answer("👀 You can only view your own hub!", show_alert=True)
+                    return
+
+                lists = get_user_manga_lists(user_id)
+                shelf_map = {
+                    "read": ("Read Shelf", "📖"),
+                    "favorite": ("Favorites", "❤️"),
+                    "completed": ("Completed List", "🏁"),
+                    "hold": ("On Hold Shelf", "⏸️"),
+                    "dropped": ("Dropped Shelf", "👋")
+                }
+                name, emoji = shelf_map.get(shelf, ("Shelf", "📚"))
+                items = lists.get(shelf, [])
+
+                text = f"{emoji} <b>Your {name} ({len(items)}):</b>\n\n{format_manga_list(items)}"
+                kb = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Back to Hub", callback_data=f"hub_back:{user_id}")]
+                ])
+                query.edit_message_text(text, parse_mode="HTML", reply_markup=kb, disable_web_page_preview=True)
+                query.answer()
+        except Exception as e:
+            logger.error(f"Error handling hub_shelf: {e}")
+        return
+
+    # 1c. Handle Return to Hub (hub_back:<target_id>)
+    if data.startswith("hub_back:"):
+        try:
+            lists = get_user_manga_lists(user_id)
+            bookmarks = get_user_bookmarks(user_id)
+            badges = get_user_badges(user_id)
+
+            read_count = len(lists.get("read", []))
+            fav_count = len(lists.get("favorite", []))
+            comp_count = len(lists.get("completed", []))
+            hold_count = len(lists.get("hold", []))
+            drop_count = len(lists.get("dropped", []))
+            bm_count = len(bookmarks)
+            badge_str = " ".join(badges) if badges else "🎖️ Explorer"
+
+            text = (
+                f"🛸 <b>Personal Manga Hub</b> 🌌\n\n"
+                f"👤 <b>Reader:</b> {html.escape(user_name)}\n"
+                f"🏅 <b>Badges:</b> {badge_str}\n\n"
+                f"📊 <b>Your Reading Shelves:</b>\n"
+                f"• 📖 Read: <b>{read_count}</b> titles\n"
+                f"• ❤️ Favorites: <b>{fav_count}</b> titles\n"
+                f"• 🏁 Completed: <b>{comp_count}</b> titles\n"
+                f"• ⏸️ On Hold: <b>{hold_count}</b> titles\n"
+                f"• 👋 Dropped: <b>{drop_count}</b> titles\n"
+                f"• 📌 Bookmarks: <b>{bm_count}</b> chapters\n\n"
+                f"<i>Tap any shelf below to view your manga:</i>"
+            )
+
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(f"📖 Read ({read_count})", callback_data=f"hub_shelf:read:{user_id}"),
+                    InlineKeyboardButton(f"❤️ Favorites ({fav_count})", callback_data=f"hub_shelf:favorite:{user_id}")
+                ],
+                [
+                    InlineKeyboardButton(f"🏁 Completed ({comp_count})", callback_data=f"hub_shelf:completed:{user_id}"),
+                    InlineKeyboardButton(f"⏸️ On Hold ({hold_count})", callback_data=f"hub_shelf:hold:{user_id}")
+                ],
+                [
+                    InlineKeyboardButton(f"👋 Dropped ({drop_count})", callback_data=f"hub_shelf:dropped:{user_id}"),
+                    InlineKeyboardButton(f"📌 Bookmarks ({bm_count})", callback_data="bm_list_0")
+                ],
+                [
+                    InlineKeyboardButton("👤 Visual Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/profile?user_id={user_id}")),
+                    InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat="")
+                ]
+            ])
+            query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+            query.answer()
+        except Exception as e:
+            logger.error(f"Error handling hub_back: {e}")
         return
 
     # 2. Handle Rating Menu: showrate_<channel_id>_<owner_id>

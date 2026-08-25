@@ -58,9 +58,12 @@ def profile_cmd(update: Update, context: CallbackContext):
         f"🎖️ <b>Badges:</b>\n{badge_display}"
     )
 
-    # Inline button (secured with user_id)
+    # Inline buttons (secured with user_id)
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📜 View My Lists", callback_data=f"view_mylist:{user_id}")]
+        [
+            InlineKeyboardButton("🛸 My Hub", callback_data=f"hub_back:{user_id}"),
+            InlineKeyboardButton("📜 View My Lists", callback_data=f"view_mylist:{user_id}")
+        ]
     ])
 
     # Try sending profile pic
