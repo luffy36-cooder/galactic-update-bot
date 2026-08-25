@@ -71,11 +71,19 @@ def profile_cmd(update: Update, context: CallbackContext):
             f"🎖️ <b>Badges:</b> {badge_display}"
         )
 
+        is_private = update.effective_chat.type == "private" if update.effective_chat else True
+        bot_username = context.bot.username or "Galactic_Update_bot"
+        web_btn = (
+            InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))
+            if is_private
+            else InlineKeyboardButton("👤 Web Profile", url=f"https://t.me/{bot_username}?start=webhub")
+        )
+
         # Inline buttons
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("🛸 My Hub", callback_data=f"hub_back:{user_id}"),
-                InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))
+                web_btn
             ],
             [
                 InlineKeyboardButton("📜 View My Lists", callback_data=f"view_mylist:{user_id}"),

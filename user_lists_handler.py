@@ -137,6 +137,14 @@ def myhub_cmd(update: Update, context: CallbackContext):
             f"<i>Tap any shelf below to view your manga collection:</i>"
         )
 
+        is_private = update.effective_chat.type == "private" if update.effective_chat else True
+        bot_username = context.bot.username or "Galactic_Update_bot"
+        web_btn = (
+            InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))
+            if is_private
+            else InlineKeyboardButton("👤 Web Profile", url=f"https://t.me/{bot_username}?start=webhub")
+        )
+
         keyboard = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(f"🔔 Subscriptions ({sub_count})", callback_data=f"hub_shelf:subscribed:{user_id}"),
@@ -152,7 +160,7 @@ def myhub_cmd(update: Update, context: CallbackContext):
             ],
             [
                 InlineKeyboardButton(f"👋 Dropped ({drop_count})", callback_data=f"hub_shelf:dropped:{user_id}"),
-                InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))
+                web_btn
             ],
             [
                 InlineKeyboardButton("🔍 Search Manga (Inline)", switch_inline_query_current_chat="")
