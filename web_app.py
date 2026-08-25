@@ -89,12 +89,18 @@ def register_web_routes(app, bot_getter=None):
     def get_image_proxy(channel_id):
         import time as _time
         manga = get_manga_by_id(channel_id)
-        if not manga or not manga.get("image"):
+        if not manga:
             return Response(DEFAULT_COVER_SVG, mimetype="image/svg+xml")
 
-        img_val = manga.get("image")
+        img_val = manga.get("image") or manga.get("image_id") or manga.get("banner") or manga.get("photo")
+        if not img_val:
+            return Response(DEFAULT_COVER_SVG, mimetype="image/svg+xml")
+
         if isinstance(img_val, str) and (img_val.startswith("http://") or img_val.startswith("https://")):
             return redirect(img_val)
+
+        if isinstance(img_val, str) and os.path.exists(img_val):
+            return send_file(img_val)
 
         now = _time.time()
         cached = _image_url_cache.get(img_val)
@@ -110,6 +116,14 @@ def register_web_routes(app, bot_getter=None):
                     return redirect(tg_file.file_path)
             except Exception as e:
                 logger.warning(f"Failed to fetch Telegram image for {channel_id}: {e}")
+
+        # Check banner fallback
+        banner = manga.get("banner")
+        if banner and isinstance(banner, str):
+            if banner.startswith("http://") or banner.startswith("https://"):
+                return redirect(banner)
+            if os.path.exists(banner):
+                return send_file(banner)
 
         return Response(DEFAULT_COVER_SVG, mimetype="image/svg+xml")
 

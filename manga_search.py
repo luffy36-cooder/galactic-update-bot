@@ -198,45 +198,74 @@ def _send_single_manga(update_or_query, result: dict):
         f"<i>Tap below to read, subscribe to new chapter alerts, or track your reading status:</i>"
     )
 
+    photo_val = result.get("image") or result.get("image_id") or result.get("banner") or result.get("photo")
+
     try:
         # In-place message edit for callback queries
         if hasattr(update_or_query, "callback_query") and update_or_query.callback_query:
             query = update_or_query.callback_query
-            try:
-                if query.message and query.message.photo:
+            if query.message and query.message.photo:
+                try:
+                    query.edit_message_caption(caption=caption, parse_mode="HTML", reply_markup=keyboard)
+                    return
+                except Exception:
                     try:
-                        query.edit_message_caption(caption=caption, parse_mode="HTML", reply_markup=keyboard)
-                        return
-                    except Exception:
                         query.edit_message_reply_markup(reply_markup=keyboard)
                         return
-                elif query.message:
-                    query.edit_message_text(text=caption, parse_mode="HTML", reply_markup=keyboard)
+                    except Exception:
+                        pass
+            elif query.message and not query.message.photo:
+                # User clicked a button from a text search menu -> delete text menu and send full photo card!
+                try:
+                    query.message.delete()
+                except Exception:
+                    pass
+
+        # Sending new message (from command, search, or converted callback)
+        msg = getattr(update_or_query, "message", None) or getattr(update_or_query, "effective_message", None)
+        target_chat = chat or (msg.chat if msg else None)
+
+        # 1. Try sending with raw photo_val (file_id, URL, or local path)
+        if photo_val:
+            try:
+                import os
+                if isinstance(photo_val, str) and os.path.exists(photo_val):
+                    with open(photo_val, "rb") as f:
+                        if msg:
+                            msg.reply_photo(photo=f, caption=caption, parse_mode="HTML", reply_markup=keyboard)
+                            return
+                        elif target_chat:
+                            target_chat.send_photo(photo=f, caption=caption, parse_mode="HTML", reply_markup=keyboard)
+                            return
+                else:
+                    if msg:
+                        msg.reply_photo(photo=photo_val, caption=caption, parse_mode="HTML", reply_markup=keyboard)
+                        return
+                    elif target_chat:
+                        target_chat.send_photo(photo=photo_val, caption=caption, parse_mode="HTML", reply_markup=keyboard)
+                        return
+            except Exception:
+                pass
+
+        # 2. Fallback: Send photo via Web App image proxy URL (Telegram downloads & renders HD photo card)
+        if cid:
+            try:
+                proxy_img_url = f"{WEB_APP_URL}/api/image/{cid}"
+                if msg:
+                    msg.reply_photo(photo=proxy_img_url, caption=caption, parse_mode="HTML", reply_markup=keyboard)
+                    return
+                elif target_chat:
+                    target_chat.send_photo(photo=proxy_img_url, caption=caption, parse_mode="HTML", reply_markup=keyboard)
                     return
             except Exception:
                 pass
 
-        # Sending new message (from command or search)
-        msg = getattr(update_or_query, "message", None) or getattr(update_or_query, "effective_message", None)
-
-        photo_val = result.get("image")
-        if photo_val:
-            try:
-                if msg:
-                    msg.reply_photo(photo=photo_val, caption=caption, parse_mode="HTML", reply_markup=keyboard)
-                    return
-                elif chat:
-                    chat.send_photo(photo=photo_val, caption=caption, parse_mode="HTML", reply_markup=keyboard)
-                    return
-            except Exception as e:
-                pass
-
-        # Fallback to rich text message with cover banner
+        # 3. Last resort fallback to text message with cover banner
         rich_caption = f"<a href='{WEB_APP_URL}/api/image/{cid}'>&#8205;</a>" + caption if cid else caption
         if msg:
             msg.reply_text(rich_caption, parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=False)
-        elif chat:
-            chat.send_message(text=rich_caption, parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=False)
+        elif target_chat:
+            target_chat.send_message(text=rich_caption, parse_mode="HTML", reply_markup=keyboard, disable_web_page_preview=False)
     except Exception as e:
         send_message(update_or_query, f"📚 <b>{safe_name}</b>\n📖 {channel_link}", reply_markup=keyboard, parse_mode="HTML")
 
