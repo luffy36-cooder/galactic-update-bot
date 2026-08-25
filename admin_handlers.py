@@ -424,3 +424,117 @@ def scanallchannels_cmd(update: Update, context: CallbackContext):
             )
 
     threading.Thread(target=run_scan, daemon=True, name="MTProtoLiveScanner").start()
+
+
+# 👥 /uu — Hidden Admin Command: Paginated Bot Users Directory
+UU_PAGE_SIZE = 10
+
+def uu_cmd(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not is_admin(user_id):
+        return update.message.reply_text("❌ You're not allowed to use this command.")
+
+    page = 0
+    if context.args and context.args[0].isdigit():
+        page = max(0, int(context.args[0]) - 1)
+
+    send_users_page(update, context, page)
+
+
+def send_users_page(update, context: CallbackContext, page: int):
+    from database import get_all_bot_user_ids, users_col, save_bot_user
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+
+    all_uids = get_all_bot_user_ids()
+    total_users = len(all_uids)
+
+    if total_users == 0:
+        msg_text = "📭 <b>No users recorded in the database yet.</b>"
+        if update.message:
+            return update.message.reply_text(msg_text, parse_mode="HTML")
+        else:
+            return update.callback_query.edit_message_text(msg_text, parse_mode="HTML")
+
+    total_pages = max(1, (total_users + UU_PAGE_SIZE - 1) // UU_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+
+    start_idx = page * UU_PAGE_SIZE
+    end_idx = start_idx + UU_PAGE_SIZE
+    page_uids = all_uids[start_idx:end_idx]
+
+    text = (
+        f"👥 <b>Galactic Bot Users Directory</b> 🌌\n"
+        f"📄 <b>Page {page + 1} of {total_pages}</b> | Total Users: <b>{total_users}</b>\n"
+        f"─────────────────────────\n\n"
+    )
+
+    for idx, uid in enumerate(page_uids, start=start_idx + 1):
+        doc = users_col.find_one({"user_id": uid})
+        name = "User"
+        username = None
+
+        if doc:
+            name = doc.get("full_name") or doc.get("first_name") or "User"
+            username = doc.get("username")
+        else:
+            try:
+                chat = context.bot.get_chat(uid)
+                if chat:
+                    name = chat.full_name or chat.first_name or "User"
+                    username = chat.username
+                    save_bot_user(uid, chat.first_name, chat.last_name, chat.username)
+            except Exception:
+                name = f"User {uid}"
+
+        uname_str = f"@{username}" if username else "<i>No Username</i>"
+        safe_name = html.escape(name)
+        text += (
+            f"<b>{idx}.</b> 👤 <b>{safe_name}</b>\n"
+            f"   • 🏷️ <b>Username:</b> {uname_str}\n"
+            f"   • 🆔 <b>ID:</b> <code>{uid}</code> • <a href=\"tg://user?id={uid}\">Profile</a>\n\n"
+        )
+
+    text += "─────────────────────────"
+
+    # Pagination buttons
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"uu_page_{page-1}"))
+    nav_row.append(InlineKeyboardButton(f"📄 {page+1}/{total_pages}", callback_data=f"uu_page_{page}"))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"uu_page_{page+1}"))
+
+    keyboard = InlineKeyboardMarkup([nav_row, [InlineKeyboardButton("🔄 Refresh List", callback_data=f"uu_page_{page}")]])
+
+    if update.message:
+        update.message.reply_text(
+            text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=keyboard
+        )
+    elif update.callback_query:
+        try:
+            update.callback_query.edit_message_text(
+                text,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=keyboard
+            )
+        except Exception:
+            pass
+
+
+def uu_page_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+
+    user_id = query.from_user.id
+    if not is_admin(user_id):
+        return query.edit_message_text("❌ You are not authorized.")
+
+    try:
+        page = int(query.data.split("_")[-1])
+        send_users_page(update, context, page)
+    except Exception:
+        pass

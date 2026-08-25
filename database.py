@@ -29,6 +29,7 @@ subscriptions_col = db["manga_subscriptions"]
 chapter_files_col = db["chapter_files"]
 chapter_reactions_col = db["chapter_reactions"]
 chapter_comments_col = db["chapter_comments"]
+users_col = db["bot_users"]
 
 
 # ==========================================
@@ -501,6 +502,32 @@ def get_user_profile(user_id: int):
     bookmarks = bookmarks_col.count_documents({"user_id": user_id})
     read = get_user_achievements(user_id).get("read", 0)
     return {"bookmarks": bookmarks, "read_count": read}
+
+
+def save_bot_user(user_id: int, first_name: str, last_name: str = None, username: str = None):
+    """Upserts user profile record into bot_users."""
+    if not user_id:
+        return
+    full_name = f"{first_name or ''} {last_name or ''}".strip() or "User"
+    data = {
+        "user_id": user_id,
+        "first_name": first_name or "",
+        "last_name": last_name or "",
+        "full_name": full_name,
+        "username": username or None,
+        "last_seen": time.time()
+    }
+    users_col.update_one({"user_id": user_id}, {"$set": data, "$setOnInsert": {"created_at": time.time()}}, upsert=True)
+
+
+def get_all_bot_user_ids():
+    """Gathers all unique user IDs from all collections."""
+    all_uids = set(users_col.distinct("user_id"))
+    for col in [bookmarks_col, achievements_col, read_log_col, manga_status_col, ratings_col, subscriptions_col, sudo_col]:
+        for uid in col.distinct("user_id"):
+            if uid:
+                all_uids.add(uid)
+    return list(all_uids)
 
 
 # ==========================================

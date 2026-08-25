@@ -54,6 +54,8 @@ from admin_handlers import (
     sudo_cmd,
     handle_forwarded_chapter,
     scanallchannels_cmd,
+    uu_cmd,
+    uu_page_callback,
 )
 from database import auto_sync_all_chapters
 from addmanga_handler import add_manga_cmd
@@ -170,6 +172,7 @@ def main():
     dp.add_handler(CommandHandler("broadcast", broadcast_cmd))
     dp.add_handler(CommandHandler("delete_broadcast", delete_broadcast_cmd))
     dp.add_handler(CommandHandler("bdst", bdst_cmd))
+    dp.add_handler(CommandHandler("uu", uu_cmd))
     dp.add_handler(CommandHandler("delete_forwarded", delete_forwarded_cmd))
     dp.add_handler(CommandHandler("dmbroadcast", dmbroadcast_cmd))
     dp.add_handler(CommandHandler("delete_dmbroadcast", delete_dmbroadcast_cmd))
@@ -203,6 +206,7 @@ def main():
     dp.add_handler(CallbackQueryHandler(handle_status_buttons, pattern="^(read|unread|fav|unfav|complete|uncomplete|drop|undrop|hold|unhold|view|showrate|setrate|subtoggle|hub_)"))
     dp.add_handler(CallbackQueryHandler(handle_request_callbacks, pattern="^req_"))
     dp.add_handler(CallbackQueryHandler(select_manga_callback, pattern=r"^select_"))
+    dp.add_handler(CallbackQueryHandler(uu_page_callback, pattern=r"^uu_page_\d+$"))
 
     # 🔍 Inline Search & Group/DM Text Search
     dp.add_handler(InlineQueryHandler(inline_query))

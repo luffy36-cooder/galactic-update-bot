@@ -33,6 +33,11 @@ def log_to_channel(context: CallbackContext, text: str):
 
 # /start command
 def start_cmd(update: Update, context: CallbackContext):
+    if update.effective_user:
+        u = update.effective_user
+        from database import save_bot_user
+        save_bot_user(u.id, u.first_name, u.last_name, u.username)
+
     if context.args:
         arg = context.args[0].lower()
         if arg in ["hub", "myhub"]:
