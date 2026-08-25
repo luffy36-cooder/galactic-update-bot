@@ -239,6 +239,10 @@ def help_cmd(update: Update, context: CallbackContext):
 
     buttons = InlineKeyboardMarkup([
         [
+            InlineKeyboardButton("📖 Visual Guide Banner", callback_data="help_guide"),
+            InlineKeyboardButton("🚀 Web App", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web")) if is_private else InlineKeyboardButton("🚀 Web App", url=f"https://t.me/{bot_username}?start=web")
+        ],
+        [
             InlineKeyboardButton("🔍 Search Guide", callback_data="help_search"),
             InlineKeyboardButton("📌 Bookmarks Guide", callback_data="help_bookmarks")
         ],
@@ -319,6 +323,9 @@ def help_button_handler(update: Update, context: CallbackContext):
         ),
     }
 
+    if query.data == "help_guide":
+        return guide_cmd(update, context)
+
     text = section_texts.get(query.data, "❓ Unknown help section.")
     back_button = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 Back to Main Help", callback_data="help_main")]
@@ -334,3 +341,59 @@ def help_button_handler(update: Update, context: CallbackContext):
                 query.edit_message_caption(caption=text, parse_mode="HTML", reply_markup=back_button)
             except Exception:
                 pass
+
+
+# 📖 /guide — Sends the User Guide Banner with full feature walkthrough
+def guide_cmd(update: Update, context: CallbackContext):
+    user = update.effective_user.first_name if update.effective_user else "Senpai"
+    user_id = update.effective_user.id if update.effective_user else 0
+    bot_username = context.bot.username or "Galactic_Update_bot"
+    is_private = update.effective_chat.type == "private" if update.effective_chat else True
+
+    banner_path = os.path.join(os.path.dirname(__file__), "banners", "user_guide_banner.png")
+
+    caption = (
+        "🌌 <b>MANGA GALACTIC — READER'S GUIDE</b> 📖\n\n"
+        "Read 136+ Manga & Manhwa directly inside Telegram with zero download delay!\n\n"
+        "🌐 <b>1. Read in the Web Mini App:</b>\n"
+        "• <code>/web</code> — Open full catalog & continuous scroll reader\n"
+        "• <code>/webhub</code> — Visual reading shelves on web\n"
+        "• <code>/webprofile</code> — View your reader rank & badges\n\n"
+        "🔍 <b>2. Instant Search:</b>\n"
+        "• <code>/manga &lt;name&gt;</code> — Search 136+ titles with info & read buttons\n"
+        f"• <code>@{bot_username} &lt;name&gt;</code> — Inline search in any chat!\n\n"
+        "📌 <b>3. Bookmarks & Reading Hub:</b>\n"
+        "• <code>/bookmark &lt;name&gt; &lt;ch&gt;</code> — Save your reading progress\n"
+        "• <code>/mybookmarks</code> — 1-tap resume reading\n"
+        "• <code>/myhub</code> — Manage your Read, Favorite & Currently Reading shelves\n\n"
+        "⭐ <b>4. Rate & Chapter Alerts:</b>\n"
+        "• Leave 1–5 star ratings on any manga card\n"
+        "• Tap 🔔 Subscribe to get instant private DM alerts when new chapters drop!\n\n"
+        f"👉 <b>Start Reading Now:</b> @{bot_username}"
+    )
+
+    if is_private:
+        web_btn = InlineKeyboardButton("🚀 Launch Web Reader", web_app=WebAppInfo(url=f"{WEB_APP_URL}/web"))
+    else:
+        web_btn = InlineKeyboardButton("🚀 Launch Web Reader", url=f"https://t.me/{bot_username}?start=web")
+
+    buttons = InlineKeyboardMarkup([
+        [web_btn],
+        [
+            InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat=""),
+            InlineKeyboardButton("🛸 My Hub", callback_data=f"hub_back:{user_id}")
+        ]
+    ])
+
+    if os.path.exists(banner_path):
+        with open(banner_path, "rb") as f:
+            if update.message:
+                update.message.reply_photo(photo=f, caption=caption, parse_mode="HTML", reply_markup=buttons)
+            elif update.effective_chat:
+                update.effective_chat.send_photo(photo=f, caption=caption, parse_mode="HTML", reply_markup=buttons)
+    else:
+        if update.message:
+            update.message.reply_text(caption, parse_mode="HTML", reply_markup=buttons)
+        elif update.effective_chat:
+            update.effective_chat.send_message(caption, parse_mode="HTML", reply_markup=buttons)
+

@@ -30,7 +30,7 @@ except ImportError:
 from config import BOT_TOKEN
 
 # 💫 Core Handlers
-from start_handler import start_cmd, help_cmd, help_button_handler
+from start_handler import start_cmd, help_cmd, help_button_handler, guide_cmd
 from profile_handler import profile_cmd
 from stats_handler import stats_cmd
 from ping_handler import ping_cmd
@@ -56,6 +56,7 @@ from admin_handlers import (
     scanallchannels_cmd,
     uu_cmd,
     uu_page_callback,
+    adminhelp_cmd,
 )
 from database import auto_sync_all_chapters
 from addmanga_handler import add_manga_cmd
@@ -147,6 +148,7 @@ def main():
     # ✅ Basic User Commands
     dp.add_handler(CommandHandler("start", start_cmd))
     dp.add_handler(CommandHandler("help", help_cmd))
+    dp.add_handler(CommandHandler("guide", guide_cmd))
     dp.add_handler(CommandHandler("profile", profile_cmd))
     dp.add_handler(CommandHandler("stats", stats_cmd))
     dp.add_handler(CommandHandler("ping", ping_cmd))
@@ -156,6 +158,7 @@ def main():
     dp.add_handler(CommandHandler("manga", search_by_command))
 
     # 🛠 Admin Commands
+    dp.add_handler(CommandHandler("adminhelp", adminhelp_cmd))
     dp.add_handler(CommandHandler("add", add_channel_cmd))
     dp.add_handler(CommandHandler("addmanga", add_manga_cmd))
     dp.add_handler(CommandHandler("unpost", unpost_cmd))

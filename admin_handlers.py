@@ -1,6 +1,7 @@
+import os
 import html
 import logging
-from telegram import Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackContext
 from database import (
     list_all_manga,
@@ -554,3 +555,54 @@ def uu_page_callback(update: Update, context: CallbackContext):
         send_users_page(update, context, page)
     except Exception:
         pass
+
+
+# 👑 /adminhelp — Sends the Admin Command Center Banner & Full Cheat Sheet
+def adminhelp_cmd(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id if update.effective_user else 0
+    if not is_admin(user_id):
+        return update.message.reply_text("❌ You are not authorized to view admin help.")
+
+    banner_path = os.path.join(os.path.dirname(__file__), "banners", "admin_guide_banner.png")
+
+    caption = (
+        "👑 <b>MANGA GALACTIC — ADMIN COMMAND CENTER</b> 🛠️\n\n"
+        "📢 <b>1. Broadcasting Suite:</b>\n"
+        "• All Channels: <code>/broadcast &lt;message&gt;</code>\n"
+        "• Auto-Pin in Channels: <code>/broadcast -pin &lt;message&gt;</code>\n"
+        "• Specific Channel: <code>/broadcast -1002638509926 &lt;msg&gt;</code>\n"
+        "• Specific Manga: <code>/broadcast manga=Solo Leveling &lt;msg&gt;</code>\n"
+        "• All Group Chats: <code>/broadcast gc &lt;msg&gt;</code>\n"
+        "• User DMs: Reply with <code>/dmbroadcast</code> <i>(or <code>/dmbroadcast -pin</code>)</i>\n"
+        "• Status Inspector: <code>/bdst</code>\n"
+        "• Undo / Delete: <code>/delete_broadcast &lt;id&gt;</code>\n\n"
+        "👥 <b>2. User & Admin Management:</b>\n"
+        "• <code>/uu</code> — Secret paginated bot users directory\n"
+        "• <code>/sudo</code> — List all active admins & owner\n"
+        "• <code>/addadmins &lt;user_id&gt;</code> — Promote user to admin\n\n"
+        "⚡ <b>3. Channel & PDF Indexing:</b>\n"
+        "• <code>/scanallchannels</code> — High-speed MTProto PDF scanner\n"
+        "• <code>/syncchapters</code> — Auto-recalculate chapter counts\n"
+        "• <code>/add &lt;name&gt;</code> — Register manga channel\n\n"
+        "🔒 <i>Confidential • Authorized Admins Only</i>"
+    )
+
+    buttons = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("👥 Users Directory (/uu)", callback_data="uu_page_0"),
+            InlineKeyboardButton("⚡ Sudo Admins", callback_data="help_admin")
+        ]
+    ])
+
+    if os.path.exists(banner_path):
+        with open(banner_path, "rb") as f:
+            if update.message:
+                update.message.reply_photo(photo=f, caption=caption, parse_mode="HTML", reply_markup=buttons)
+            elif update.effective_chat:
+                update.effective_chat.send_photo(photo=f, caption=caption, parse_mode="HTML", reply_markup=buttons)
+    else:
+        if update.message:
+            update.message.reply_text(caption, parse_mode="HTML", reply_markup=buttons)
+        elif update.effective_chat:
+            update.effective_chat.send_message(caption, parse_mode="HTML", reply_markup=buttons)
+
