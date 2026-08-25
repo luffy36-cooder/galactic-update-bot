@@ -33,8 +33,13 @@ chapter_files_col = db["chapter_files"]
 # ⚡ In-Memory High-Speed Caching Layer
 # ==========================================
 _manga_cache = None
+_manga_by_id_cache = {}
 _manga_cache_time = 0
 MANGA_CACHE_TTL = 60  # Refresh cache every 60 seconds or on mutation
+
+_ratings_cache = None
+_ratings_cache_time = 0
+RATINGS_CACHE_TTL = 60
 
 _sudo_cache = None
 _modes_cache = {}
@@ -68,16 +73,18 @@ def init_db_indexes():
 
 
 def _invalidate_manga_cache():
-    global _manga_cache, _manga_cache_time
+    global _manga_cache, _manga_by_id_cache, _manga_cache_time
     _manga_cache = None
+    _manga_by_id_cache = {}
     _manga_cache_time = 0
 
 
 def _get_cached_manga_list():
-    global _manga_cache, _manga_cache_time
+    global _manga_cache, _manga_by_id_cache, _manga_cache_time
     now = time.time()
     if _manga_cache is None or (now - _manga_cache_time) > MANGA_CACHE_TTL:
         _manga_cache = list(manga_col.find().sort("name", 1))
+        _manga_by_id_cache = {m["channel_id"]: m for m in _manga_cache if "channel_id" in m}
         _manga_cache_time = now
     return _manga_cache
 
@@ -85,6 +92,38 @@ def _get_cached_manga_list():
 def get_all_manga_cached():
     """Returns in-memory cached list of all manga."""
     return _get_cached_manga_list()
+
+
+def _invalidate_ratings_cache():
+    global _ratings_cache, _ratings_cache_time
+    _ratings_cache = None
+    _ratings_cache_time = 0
+
+
+def get_all_ratings_cached():
+    """Returns in-memory cached ratings summary for all manga."""
+    global _ratings_cache, _ratings_cache_time
+    now = time.time()
+    if _ratings_cache is None or (now - _ratings_cache_time) > RATINGS_CACHE_TTL:
+        try:
+            pipeline = [
+                {"$group": {
+                    "_id": "$channel_id",
+                    "avg_rating": {"$avg": "$rating"},
+                    "total_ratings": {"$sum": 1}
+                }}
+            ]
+            _ratings_cache = {
+                doc["_id"]: {
+                    "avg_rating": round(float(doc["avg_rating"]), 1),
+                    "total_ratings": int(doc["total_ratings"])
+                }
+                for doc in ratings_col.aggregate(pipeline)
+            }
+        except Exception:
+            _ratings_cache = {}
+        _ratings_cache_time = now
+    return _ratings_cache
 
 
 # Initialize indexes on load
@@ -172,10 +211,16 @@ def set_manga_info(channel_id, name, link, image=None):
 
 
 def get_manga_info(channel_id):
-    return manga_col.find_one({"channel_id": channel_id}) or {}
+    m = get_manga_by_id(channel_id)
+    return m or {}
 
 
 def get_manga_by_id(channel_id):
+    if _manga_by_id_cache and channel_id in _manga_by_id_cache:
+        return _manga_by_id_cache[channel_id]
+    _get_cached_manga_list()
+    if _manga_by_id_cache and channel_id in _manga_by_id_cache:
+        return _manga_by_id_cache[channel_id]
     return manga_col.find_one({"channel_id": channel_id})
 
 
@@ -495,24 +540,15 @@ def save_manga_rating(user_id: int, user_name: str, channel_id: int, rating: int
         {"$set": data},
         upsert=True
     )
+    _invalidate_ratings_cache()
     increment_user_achievement(user_id, "ratings")
     return True
 
 
 def get_manga_rating_summary(channel_id: int, user_id: int = None):
     """Returns average rating, total review count, and current user's rating."""
-    pipeline = [
-        {"$match": {"channel_id": channel_id}},
-        {"$group": {
-            "_id": "$channel_id",
-            "avg_rating": {"$avg": "$rating"},
-            "total_ratings": {"$sum": 1}
-        }}
-    ]
-    res = list(ratings_col.aggregate(pipeline))
-    avg_rating = round(res[0]["avg_rating"], 1) if res else 0.0
-    total_ratings = res[0]["total_ratings"] if res else 0
-
+    all_rat = get_all_ratings_cached()
+    summary = all_rat.get(channel_id, {"avg_rating": 0.0, "total_ratings": 0})
     user_rating = None
     if user_id:
         doc = ratings_col.find_one({"channel_id": channel_id, "user_id": user_id}, {"rating": 1})
@@ -520,8 +556,8 @@ def get_manga_rating_summary(channel_id: int, user_id: int = None):
             user_rating = doc.get("rating")
 
     return {
-        "avg_rating": avg_rating,
-        "total_ratings": total_ratings,
+        "avg_rating": summary.get("avg_rating", 0.0),
+        "total_ratings": summary.get("total_ratings", 0),
         "user_rating": user_rating
     }
 

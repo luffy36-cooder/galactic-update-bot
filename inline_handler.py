@@ -16,7 +16,8 @@ from database import (
     get_user_subscriptions,
     get_user_badges,
     get_manga_by_id,
-    get_manga_rating_summary
+    get_manga_rating_summary,
+    get_all_ratings_cached
 )
 from config import WEB_APP_URL
 
@@ -87,15 +88,23 @@ def inline_query(update, context):
             "sub", "subs", "subscribed", "subscription", "subscriptions"
         ]
 
+        # Fetch user lists & ratings in single fast calls (cached)
+        lists = get_user_manga_lists(user_id)
+        bookmarks = get_user_bookmarks(user_id)
+        sub_ids = get_user_subscriptions(user_id)
+        badges = get_user_badges(user_id)
+        all_ratings = get_all_ratings_cached()
+
+        # Build in-memory user shelf lookup: channel_id -> [statuses]
+        user_shelf_map = {}
+        for stat_name, cids in lists.items():
+            for cid in cids:
+                user_shelf_map.setdefault(cid, []).append(stat_name)
+
         # =========================================================
         # 🛸 1. PERSONAL READING HUB & WEB HUB CARDS
         # =========================================================
         if is_hub_query or not query_text:
-            lists = get_user_manga_lists(user_id)
-            bookmarks = get_user_bookmarks(user_id)
-            sub_ids = get_user_subscriptions(user_id)
-            badges = get_user_badges(user_id)
-
             read_ids = lists.get("read", [])
             fav_ids = lists.get("favorite", [])
             comp_ids = lists.get("completed", [])
@@ -131,7 +140,7 @@ def inline_query(update, context):
 
             # Shelf: Bookmarks
             bm_lines = []
-            for b in bookmarks[:30]:
+            for b in bookmarks[:25]:
                 b_manga = html.escape(b.get("manga", "Unknown"))
                 b_ch = b.get("chapter", 1)
                 b_link = b.get("post_link")
@@ -257,7 +266,7 @@ def inline_query(update, context):
             if is_hub_query:
                 update.inline_query.answer(
                     results,
-                    cache_time=1,
+                    cache_time=5,
                     is_personal=True,
                     switch_pm_text="🔍 Search All Manga Titles",
                     switch_pm_parameter="search"
@@ -268,11 +277,9 @@ def inline_query(update, context):
         # 📚 2. MANGA CATALOG & SEARCH RESULTS
         # =========================================================
         if not query_text:
-            # Top popular manga from catalog
             all_manga = get_all_manga_cached()
             search_results = sorted(all_manga, key=lambda x: int(x.get("total_chapters") or 0), reverse=True)[:35]
         else:
-            # Hybrid search
             search_results = search_manga_by_name(query_text, limit=35)
 
         for manga in search_results:
@@ -283,8 +290,8 @@ def inline_query(update, context):
             total_chapters = manga.get("total_chapters")
             cover_image = f"{WEB_APP_URL}/api/image/{channel_id}"
 
-            # Reading status tags for querying user
-            status_list = get_user_manga_status(user_id, channel_id) if channel_id else []
+            # In-memory status tags (0ms)
+            status_list = user_shelf_map.get(channel_id, []) if channel_id else []
             status_tags = []
             if "favorite" in status_list: status_tags.append("❤️ Fav")
             if "read" in status_list: status_tags.append("✅ Read")
@@ -296,8 +303,8 @@ def inline_query(update, context):
             chap_str = f" • {total_chapters} ch" if total_chapters else ""
             description = f"{status_str}{chap_str}"
 
-            # Community ratings
-            rating_data = get_manga_rating_summary(channel_id, user_id) if channel_id else {}
+            # In-memory ratings (0ms)
+            rating_data = all_ratings.get(channel_id, {"avg_rating": 0.0, "total_ratings": 0}) if channel_id else {}
             avg = rating_data.get("avg_rating", 0.0)
             count = rating_data.get("total_ratings", 0)
             stars_str = f"⭐ <b>{avg}/5.0</b> ({count} reviews)" if count > 0 else "⭐ <i>No ratings yet</i>"
@@ -324,7 +331,7 @@ def inline_query(update, context):
 
             results.append(
                 InlineQueryResultArticle(
-                    id=str(uuid4()),
+                    id=f"manga_{channel_id}",
                     title=title,
                     description=description,
                     thumbnail_url=cover_image,
@@ -340,7 +347,6 @@ def inline_query(update, context):
             )
 
         if not results:
-            # Fallback when search has no results
             no_match_text = (
                 f"🔍 <b>No manga found for:</b> <code>{html.escape(query_text)}</code>\n\n"
                 f"• Check the spelling or try a shorter keyword\n"
@@ -367,8 +373,8 @@ def inline_query(update, context):
             )
 
         update.inline_query.answer(
-            results[:50],  # Telegram max limit is 50
-            cache_time=1,
+            results[:50],
+            cache_time=5,
             is_personal=True,
             switch_pm_text="🛸 Open Web Hub Mini App",
             switch_pm_parameter="webhub"
