@@ -391,13 +391,20 @@ def get_user_guide_page(page: int, user_id: int, bot_username: str, is_private: 
             "• <code>/request &lt;name&gt;</code> — Request new manhwa (e.g. <code>/request Omniscient Reader</code>)\n"
             "• <code>/profile</code> — View your reading statistics & rank"
         )
+        if is_private:
+            hub_btn = InlineKeyboardButton("🛸 My Hub", callback_data=f"hub_back:{user_id}")
+            bm_btn = InlineKeyboardButton("📌 My Bookmarks", callback_data=f"bm_list_{user_id}")
+        else:
+            hub_btn = InlineKeyboardButton("🛸 My Hub", url=f"https://t.me/{bot_username}?start=hub")
+            bm_btn = InlineKeyboardButton("📌 My Bookmarks", url=f"https://t.me/{bot_username}?start=bookmarks")
+
         buttons = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("⬅️ Prev Page (1/2)", callback_data="guide_page_1"),
-                InlineKeyboardButton("🛸 My Hub", callback_data=f"hub_back:{user_id}")
+                hub_btn
             ],
             [
-                InlineKeyboardButton("📌 My Bookmarks", callback_data=f"bm_list_{user_id}"),
+                bm_btn,
                 InlineKeyboardButton("🥇 Leaderboard", callback_data="help_leaderboard")
             ]
         ])
