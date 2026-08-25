@@ -66,7 +66,15 @@ def mybookmarks_cmd(update: Update, context: CallbackContext):
     bookmarks = get_user_bookmarks(user_id)
 
     if not bookmarks:
-        update.message.reply_text("📖 You have no bookmarks saved yet! Use <code>/bookmark &lt;manga&gt; &lt;chapter&gt;</code> to add one.", parse_mode="HTML")
+        text = "📖 <b>You have no bookmarks saved yet!</b>\n\nUse <code>/bookmark &lt;manga&gt; &lt;chapter&gt;</code> to save your chapter progress."
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🛸 My Hub", callback_data=f"hub_back:{user_id}")],
+            [InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat="")]
+        ])
+        if update.message:
+            update.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+        elif update.effective_chat:
+            update.effective_chat.send_message(text, parse_mode="HTML", reply_markup=keyboard)
         return
 
     buttons = []
@@ -77,11 +85,16 @@ def mybookmarks_cmd(update: Update, context: CallbackContext):
         # Safe callback data using index and user_id (stateless, survives restarts)
         buttons.append([InlineKeyboardButton(label, callback_data=f"bm_view_{idx}_{user_id}")])
 
-    update.message.reply_text(
-        "📚 <b>Your Saved Bookmarks:</b>\nTap any title to view details or remove it.",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+    buttons.append([
+        InlineKeyboardButton("🛸 Back to Hub", callback_data=f"hub_back:{user_id}"),
+        InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat="")
+    ])
+
+    text = "📚 <b>Your Saved Bookmarks:</b>\nTap any title to view details or remove it."
+    if update.message:
+        update.message.reply_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
+    elif update.effective_chat:
+        update.effective_chat.send_message(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(buttons))
 
 
 # 🧹 /clearbookmarks
@@ -109,18 +122,21 @@ def handle_bookmark_buttons(update: Update, context: CallbackContext):
     if data.startswith("bm_list_"):
         parts = data.split("_")
         owner_id = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else user_id
-        if user_id != owner_id:
+        if owner_id != 0 and user_id != owner_id:
             return query.answer("👀 This isn't your bookmark list.", show_alert=True)
         
         bookmarks = get_user_bookmarks(user_id)
         if not bookmarks:
-            msg_text = "📖 You have no bookmarks saved yet! Use <code>/bookmark &lt;manga&gt; &lt;chapter&gt;</code> to add one."
+            msg_text = "📖 <b>You have no bookmarks saved yet!</b>\n\nUse <code>/bookmark &lt;manga&gt; &lt;chapter&gt;</code> to add one."
+            back_kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🛸 Back to Hub", callback_data=f"hub_back:{user_id}")]
+            ])
             try:
-                query.edit_message_text(msg_text, parse_mode="HTML")
+                query.edit_message_text(msg_text, parse_mode="HTML", reply_markup=back_kb)
             except Exception:
                 try:
                     query.message.delete()
-                    context.bot.send_message(chat_id=query.message.chat_id, text=msg_text, parse_mode="HTML")
+                    context.bot.send_message(chat_id=query.message.chat_id, text=msg_text, parse_mode="HTML", reply_markup=back_kb)
                 except Exception:
                     pass
             return
@@ -131,6 +147,11 @@ def handle_bookmark_buttons(update: Update, context: CallbackContext):
             chap = entry.get("chapter", "-")
             label = f"{manga_name} (Ch. {chap})"
             buttons.append([InlineKeyboardButton(label, callback_data=f"bm_view_{idx}_{user_id}")])
+
+        buttons.append([
+            InlineKeyboardButton("🛸 Back to Hub", callback_data=f"hub_back:{user_id}"),
+            InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat="")
+        ])
 
         msg_text = "📚 <b>Your Saved Bookmarks:</b>\nTap any title to view details or remove it."
         try:
@@ -154,7 +175,7 @@ def handle_bookmark_buttons(update: Update, context: CallbackContext):
     except ValueError:
         return
 
-    if user_id != owner_id:
+    if owner_id != 0 and user_id != owner_id:
         query.answer("👀 This isn't your bookmark list.", show_alert=True)
         return
 

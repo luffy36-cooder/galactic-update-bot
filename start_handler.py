@@ -34,15 +34,43 @@ def start_cmd(update: Update, context: CallbackContext):
         if arg in ["hub", "myhub"]:
             from user_lists_handler import myhub_cmd
             return myhub_cmd(update, context)
+        elif arg == "profile":
+            from profile_handler import profile_cmd
+            return profile_cmd(update, context)
+        elif arg in ["bookmarks", "mybookmarks"]:
+            from bookmark_handler import mybookmarks_cmd
+            return mybookmarks_cmd(update, context)
+        elif arg in ["webhub", "hubweb"]:
+            from web_handlers import webhub_cmd
+            return webhub_cmd(update, context)
         elif arg == "web":
             from web_handlers import web_cmd
             return web_cmd(update, context)
         elif arg == "webprofile":
             from web_handlers import webprofile_cmd
             return webprofile_cmd(update, context)
+        elif arg == "request":
+            from request_handler import request_manga
+            return request_manga(update, context)
+        elif arg in ["read", "readlist"]:
+            from user_lists_handler import read_cmd
+            return read_cmd(update, context)
+        elif arg in ["fav", "favorites"]:
+            from user_lists_handler import fav_cmd
+            return fav_cmd(update, context)
+        elif arg.startswith("manga_"):
+            try:
+                cid = int(arg.replace("manga_", ""))
+                from database import get_manga_by_id
+                from manga_search import _send_single_manga
+                manga = get_manga_by_id(cid)
+                if manga:
+                    return _send_single_manga(update, manga)
+            except Exception:
+                pass
 
-    user = update.effective_user.first_name or "Senpai"
-    user_id = update.effective_user.id
+    user = update.effective_user.first_name if update.effective_user else "Senpai"
+    user_id = update.effective_user.id if update.effective_user else 0
     bot_username = context.bot.username or "Galactic_Update_bot"
     is_private = update.effective_chat.type == "private" if update.effective_chat else True
 
@@ -64,8 +92,8 @@ def start_cmd(update: Update, context: CallbackContext):
         f"Hey <b>{user}</b> 🌠\n\n"
         f"💬 <i>{random.choice(anime_quotes)}</i>\n"
         f"{random.choice(manga_facts)}\n\n"
-        "🔓 Or just tap one of these commands:\n"
-        "/read | /bookmark | /request | /help"
+        "🔓 Quick Commands:\n"
+        "/myhub | /profile | /manga | /bookmark | /request | /help"
     )
 
     if is_private:
@@ -78,16 +106,16 @@ def start_cmd(update: Update, context: CallbackContext):
     buttons = InlineKeyboardMarkup([
         [web_btn],
         [
-            profile_btn,
-            InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat="")
+            InlineKeyboardButton("🛸 My Hub", callback_data=f"hub_back:{user_id}"),
+            profile_btn
+        ],
+        [
+            InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat=""),
+            InlineKeyboardButton("📌 My Bookmarks", callback_data=f"bm_list_{user_id}")
         ],
         [
             InlineKeyboardButton("📚 My Reading List", callback_data="help_lists"),
-            InlineKeyboardButton("📌 My Bookmarks", callback_data="help_bookmarks")
-        ],
-        [
-            InlineKeyboardButton("🥇 Leaderboard", callback_data="help_leaderboard"),
-            InlineKeyboardButton("🌟 Recommend", callback_data="help_recommend")
+            InlineKeyboardButton("🥇 Leaderboard", callback_data="help_leaderboard")
         ],
         [
             InlineKeyboardButton("📨 Request Manga", callback_data="help_requests"),
@@ -95,20 +123,32 @@ def start_cmd(update: Update, context: CallbackContext):
         ]
     ])
 
-    if update.message:
-        update.message.reply_animation(
-            animation="https://media.tenor.com/RHX4riDnxscAAAPo/its-time-to-read-manga.mp4",
-            caption=text,
-            parse_mode="HTML",
-            reply_markup=buttons
-        )
-    else:
-        update.effective_chat.send_animation(
-            animation="https://media.tenor.com/RHX4riDnxscAAAPo/its-time-to-read-manga.mp4",
-            caption=text,
-            parse_mode="HTML",
-            reply_markup=buttons
-        )
+    sent = False
+    try:
+        if update.message:
+            update.message.reply_animation(
+                animation="https://media.tenor.com/RHX4riDnxscAAAPo/its-time-to-read-manga.mp4",
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=buttons
+            )
+            sent = True
+        elif update.effective_chat:
+            update.effective_chat.send_animation(
+                animation="https://media.tenor.com/RHX4riDnxscAAAPo/its-time-to-read-manga.mp4",
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=buttons
+            )
+            sent = True
+    except Exception as e:
+        logger.debug(f"Start animation failed, falling back to text: {e}")
+
+    if not sent:
+        if update.message:
+            update.message.reply_text(text, parse_mode="HTML", reply_markup=buttons)
+        elif update.effective_chat:
+            update.effective_chat.send_message(text, parse_mode="HTML", reply_markup=buttons)
 
     # 📝 Log start command
     log_to_channel(context, f"🚀 <b>/start used</b> by <code>{user}</code> (ID: <code>{user_id}</code>)")

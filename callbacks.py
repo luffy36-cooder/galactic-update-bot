@@ -89,7 +89,13 @@ def handle_status_buttons(update: Update, context: CallbackContext):
                 f"👋 <b>Dropped:</b>\n{format_manga_list(lists.get('dropped', []))}\n\n"
                 f"⏸️ <b>On Hold:</b>\n{format_manga_list(lists.get('hold', []))}"
             )
-            query.message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
+            kb = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("🛸 Back to Hub", callback_data=f"hub_back:{user_id}"),
+                    InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat="")
+                ]
+            ])
+            _safe_edit_or_reply(query, text, reply_markup=kb, disable_web_page_preview=True)
             query.answer()
         except Exception as e:
             logger.error(f"⚠️ Failed to handle view_mylist: {e}")
@@ -125,7 +131,10 @@ def handle_status_buttons(update: Update, context: CallbackContext):
 
                 text = f"{emoji} <b>Your {name} ({len(items)}):</b>\n\n{format_manga_list(items)}"
                 kb = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Back to Hub", callback_data=f"hub_back:{user_id}")]
+                    [
+                        InlineKeyboardButton("🔙 Back to Hub", callback_data=f"hub_back:{user_id}"),
+                        InlineKeyboardButton("🔍 Search Manga", switch_inline_query_current_chat="")
+                    ]
                 ])
                 _safe_edit_or_reply(query, text, reply_markup=kb, disable_web_page_preview=True)
                 query.answer()
@@ -163,13 +172,13 @@ def handle_status_buttons(update: Update, context: CallbackContext):
                 f"• ⏸️ On Hold: <b>{hold_count}</b> titles\n"
                 f"• 👋 Dropped: <b>{drop_count}</b> titles\n"
                 f"• 📌 Bookmarks: <b>{bm_count}</b> chapters\n\n"
-                f"<i>Tap any shelf below to view your manga:</i>"
+                f"<i>Tap any shelf below to view your manga collection:</i>"
             )
 
             keyboard = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(f"🔔 Subscriptions ({sub_count})", callback_data=f"hub_shelf:subscribed:{user_id}"),
-                    InlineKeyboardButton(f"📌 Bookmarks ({bm_count})", callback_data="bm_list_0")
+                    InlineKeyboardButton(f"📌 Bookmarks ({bm_count})", callback_data=f"bm_list_{user_id}")
                 ],
                 [
                     InlineKeyboardButton(f"📖 Read ({read_count})", callback_data=f"hub_shelf:read:{user_id}"),
@@ -181,7 +190,7 @@ def handle_status_buttons(update: Update, context: CallbackContext):
                 ],
                 [
                     InlineKeyboardButton(f"👋 Dropped ({drop_count})", callback_data=f"hub_shelf:dropped:{user_id}"),
-                    InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/profile?user_id={user_id}"))
+                    InlineKeyboardButton("👤 Web Profile", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webprofile"))
                 ],
                 [
                     InlineKeyboardButton("🔍 Search Manga (Inline)", switch_inline_query_current_chat="")

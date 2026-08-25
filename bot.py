@@ -40,7 +40,7 @@ from recommend_handler import recommend_cmd
 from listmanga_handler import register_listmanga_handlers
 
 # 🌐 Web Mini App Handlers
-from web_handlers import web_cmd, webprofile_cmd
+from web_handlers import web_cmd, webprofile_cmd, webhub_cmd
 from web_app import register_web_routes
 
 # 🔧 Admin Handlers
@@ -140,6 +140,7 @@ def main():
     dp.add_handler(CommandHandler("web", web_cmd))
     dp.add_handler(CommandHandler("mangaweb", web_cmd))
     dp.add_handler(CommandHandler("webprofile", webprofile_cmd))
+    dp.add_handler(CommandHandler("webhub", webhub_cmd))
 
     # ✅ Basic User Commands
     dp.add_handler(CommandHandler("start", start_cmd))
@@ -233,6 +234,7 @@ def main():
         user_cmds = [
             BotCommand("start", "🚀 Start Bot & Mini App"),
             BotCommand("myhub", "🛸 Personal Reading Hub"),
+            BotCommand("webhub", "🌌 Web Reading Hub & Shelves"),
             BotCommand("web", "🌐 Open Manga Catalog & Live Reader"),
             BotCommand("webprofile", "👤 Visual Reading Profile"),
             BotCommand("manga", "🔍 Search 136+ Manga & Manhwa"),
@@ -249,6 +251,7 @@ def main():
         admin_cmds = [
             BotCommand("start", "🚀 Start Bot & Mini App"),
             BotCommand("myhub", "🛸 Personal Reading Hub"),
+            BotCommand("webhub", "🌌 Web Reading Hub & Shelves"),
             BotCommand("web", "🌐 Manga Catalog & Live Reader"),
             BotCommand("webprofile", "👤 Visual Reading Profile"),
             BotCommand("manga", "🔍 Search Manga"),

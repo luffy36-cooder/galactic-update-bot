@@ -29,6 +29,25 @@ let selectedRatingChannelId = null;
 let selectedRatingValue = 5;
 
 // =========================================================
+// ⚡ Telegram Inline Search Integration
+// =========================================================
+function openTelegramInline(query = '') {
+  if (tg && typeof tg.switchInlineQuery === 'function') {
+    tg.switchInlineQuery(query);
+  } else {
+    window.open('https://t.me/Galactic_Update_bot?start=search', '_blank');
+  }
+}
+
+function shareMangaInline(mangaName) {
+  if (tg && typeof tg.switchInlineQuery === 'function') {
+    tg.switchInlineQuery(mangaName || '');
+  } else {
+    window.open('https://t.me/Galactic_Update_bot?start=search', '_blank');
+  }
+}
+
+// =========================================================
 // 🚀 Main Entry Point
 // =========================================================
 document.addEventListener('DOMContentLoaded', () => {

@@ -58,11 +58,16 @@ def register_web_routes(app, bot_getter=None):
     # -------------------------------------------------------------
     @app.route("/web")
     @app.route("/catalog")
+    @app.route("/mangaweb")
     def web_catalog():
         return render_template("index.html")
 
+    @app.route("/webhub")
+    @app.route("/hub")
+    @app.route("/myhub")
     @app.route("/webprofile")
     @app.route("/myprofile")
+    @app.route("/profile")
     def web_profile():
         return render_template("profile.html")
 

@@ -170,6 +170,12 @@ def _send_single_manga(update_or_query, result: dict):
             buttons.append(row)
             row = []
 
+    # Add Web Reader & My Hub navigation row
+    buttons.append([
+        InlineKeyboardButton("🌐 Web Reader", web_app=WebAppInfo(url=f"{WEB_APP_URL}/reader?channel_id={cid}&ch=1")),
+        InlineKeyboardButton("🛸 My Hub", callback_data=f"hub_back:{user_id}")
+    ])
+
     keyboard = InlineKeyboardMarkup(buttons)
     safe_name = html.escape(result.get("name", "Manga").title())
     total_chap = result.get("total_chapters")
@@ -182,19 +188,42 @@ def _send_single_manga(update_or_query, result: dict):
     )
 
     try:
+        # In-place message edit for callback queries
         if hasattr(update_or_query, "callback_query") and update_or_query.callback_query:
             query = update_or_query.callback_query
-            if result.get("image"):
-                query.message.reply_photo(photo=result["image"], caption=caption,
-                                          parse_mode="HTML", reply_markup=keyboard)
-            else:
-                query.message.reply_text(caption, parse_mode="HTML", reply_markup=keyboard)
-        else:
-            if result.get("image"):
-                update_or_query.message.reply_photo(photo=result["image"], caption=caption,
-                                                    parse_mode="HTML", reply_markup=keyboard)
-            else:
-                update_or_query.message.reply_text(caption, parse_mode="HTML", reply_markup=keyboard)
+            try:
+                if query.message and query.message.photo:
+                    try:
+                        query.edit_message_caption(caption=caption, parse_mode="HTML", reply_markup=keyboard)
+                        return
+                    except Exception:
+                        query.edit_message_reply_markup(reply_markup=keyboard)
+                        return
+                elif query.message:
+                    query.edit_message_text(text=caption, parse_mode="HTML", reply_markup=keyboard)
+                    return
+            except Exception:
+                pass
+
+        # Sending new message (from command or search)
+        msg = getattr(update_or_query, "message", None) or getattr(update_or_query, "effective_message", None)
+        chat = getattr(update_or_query, "effective_chat", None)
+
+        if result.get("image"):
+            try:
+                if msg:
+                    msg.reply_photo(photo=result["image"], caption=caption, parse_mode="HTML", reply_markup=keyboard)
+                    return
+                elif chat:
+                    chat.send_photo(photo=result["image"], caption=caption, parse_mode="HTML", reply_markup=keyboard)
+                    return
+            except Exception:
+                pass
+
+        if msg:
+            msg.reply_text(caption, parse_mode="HTML", reply_markup=keyboard)
+        elif chat:
+            chat.send_message(text=caption, parse_mode="HTML", reply_markup=keyboard)
     except Exception as e:
         send_message(update_or_query, f"<b>{safe_name}</b>\n📖 {channel_link}", parse_mode="HTML")
 

@@ -131,6 +131,30 @@ body {
   border-color: var(--accent-purple);
 }
 
+.btn-inline-share {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(99, 102, 241, 0.2));
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+.btn-inline-share:active {
+  transform: scale(0.94);
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.4), rgba(99, 102, 241, 0.4));
+  border-color: var(--accent-purple);
+}
+
 /* Search Section */
 .search-section {
   margin-bottom: 12px;
