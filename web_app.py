@@ -83,8 +83,11 @@ def register_web_routes(app, bot_getter=None):
     # -------------------------------------------------------------
     # 🖼️ Image Proxy Endpoint (Resolves Telegram file_id)
     # -------------------------------------------------------------
+    _image_url_cache = {}  # img_val -> (url, timestamp)
+
     @app.route("/api/image/<int(signed=True):channel_id>")
     def get_image_proxy(channel_id):
+        import time as _time
         manga = get_manga_by_id(channel_id)
         if not manga or not manga.get("image"):
             return Response(DEFAULT_COVER_SVG, mimetype="image/svg+xml")
@@ -93,11 +96,17 @@ def register_web_routes(app, bot_getter=None):
         if isinstance(img_val, str) and (img_val.startswith("http://") or img_val.startswith("https://")):
             return redirect(img_val)
 
+        now = _time.time()
+        cached = _image_url_cache.get(img_val)
+        if cached and (now - cached[1]) < 3600:
+            return redirect(cached[0])
+
         bot = bot_getter() if callable(bot_getter) else bot_getter
         if bot:
             try:
                 tg_file = bot.get_file(img_val)
                 if tg_file and tg_file.file_path:
+                    _image_url_cache[img_val] = (tg_file.file_path, now)
                     return redirect(tg_file.file_path)
             except Exception as e:
                 logger.warning(f"Failed to fetch Telegram image for {channel_id}: {e}")

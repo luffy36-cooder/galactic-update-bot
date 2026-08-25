@@ -274,13 +274,14 @@ def inline_query(update, context):
                 return
 
         # =========================================================
-        # 📚 2. MANGA CATALOG & SEARCH RESULTS
+        # 📚 2. MANGA CATALOG & SEARCH RESULTS (Alphabetical A-Z)
         # =========================================================
         if not query_text:
             all_manga = get_all_manga_cached()
-            search_results = sorted(all_manga, key=lambda x: int(x.get("total_chapters") or 0), reverse=True)[:35]
+            # Sort cleanly in Alphabetical A-Z order for easy browsing
+            search_results = sorted(all_manga, key=lambda x: x.get("name", "").strip().lower())[:45]
         else:
-            search_results = search_manga_by_name(query_text, limit=35)
+            search_results = search_manga_by_name(query_text, limit=45)
 
         for manga in search_results:
             raw_name = manga.get("name", "Unknown Title")
@@ -310,7 +311,9 @@ def inline_query(update, context):
             stars_str = f"⭐ <b>{avg}/5.0</b> ({count} reviews)" if count > 0 else "⭐ <i>No ratings yet</i>"
 
             safe_title = html.escape(title)
+            # Embed cover image banner with invisible link
             message_content = (
+                f"<a href='{cover_image}'>&#8205;</a>"
                 f"📚 <b>{safe_title}</b>\n"
                 f"{stars_str}\n"
                 f"📖 <b>Total Chapters:</b> {total_chapters or 'Ongoing'}\n"
