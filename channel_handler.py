@@ -21,6 +21,7 @@ from database import (
     unmark_chapter_posted,
     get_manga_subscribers,
     save_chapter_file,
+    db,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,32 @@ BOT_START_TIME = datetime.now(timezone.utc)
 waiting_for_image = {}
 channel_buffers = defaultdict(list)
 last_post_time = {}
+
+# 🎭 Static Sticker sent to update channel after each chapter post (auto-deletes previous)
+UPDATE_STICKER_ID = "CAACAgUAAxkBAAIG_2qN_vCMZSjbGLA_Ml3hOjmFgf-1AAJ_JgAC0-lgVFqEBCL45B0oPQQ"
+
+def send_update_sticker(bot):
+    """Sends static update sticker to update channel and removes the previous one."""
+    try:
+        last_doc = db["bot_settings"].find_one({"key": "last_update_sticker"})
+        if last_doc and last_doc.get("msg_id"):
+            try:
+                bot.delete_message(chat_id=UPDATE_CHANNEL_ID, message_id=last_doc["msg_id"])
+            except Exception as e:
+                logger.debug(f"Could not delete old sticker: {e}")
+
+        sent_msg = bot.send_sticker(
+            chat_id=UPDATE_CHANNEL_ID,
+            sticker=UPDATE_STICKER_ID
+        )
+        db["bot_settings"].update_one(
+            {"key": "last_update_sticker"},
+            {"$set": {"msg_id": sent_msg.message_id, "updated_at": time.time()}},
+            upsert=True
+        )
+        logger.info("✅ Update sticker sent and previous sticker cleaned up.")
+    except Exception as e:
+        logger.warning(f"Failed to send update sticker: {e}")
 
 
 # -------------------------
@@ -299,6 +326,9 @@ def buffer_flusher(bot):
                             reply_markup=read_button,
                             disable_web_page_preview=False
                         )
+
+                    # 🎭 Send static sticker to update channel and clean previous
+                    send_update_sticker(bot)
 
                     # Mark all chapters in this batch as posted
                     for item in chapters_to_post:
