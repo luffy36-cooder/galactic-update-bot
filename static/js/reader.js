@@ -23,8 +23,8 @@ if (window.pdfjsLib) {
 
 // URL Params & User ID
 const urlParams = new URLSearchParams(window.location.search);
-const channelId = urlParams.get('cid');
-let currentChapter = parseInt(urlParams.get('ch')) || 1;
+const channelId = urlParams.get('cid') || urlParams.get('channel_id');
+let currentChapter = parseInt(urlParams.get('ch') || urlParams.get('chapter')) || 1;
 const currentUserId = tg?.initDataUnsafe?.user?.id || urlParams.get('user_id') || localStorage.getItem('galactic_user_id') || 6600689593;
 
 // Reader State
@@ -38,6 +38,10 @@ let renderedPages = new Set();
 let isRenderingPage = false;
 let lastScrollTop = 0;
 
+// Width Presets for PC / Desktop
+const WIDTH_PRESETS = ['normal', 'compact', 'wide', 'full'];
+let currentWidthPreset = localStorage.getItem('galactic_reader_width') || 'normal';
+
 // =========================================================
 // 🚀 Initializer
 // =========================================================
@@ -47,14 +51,54 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
+  applyReaderWidth(currentWidthPreset);
   setupEventListeners();
   loadMangaChapterMeta();
 });
+
+function applyReaderWidth(preset) {
+  currentWidthPreset = preset;
+  document.body.setAttribute('data-reader-width', preset);
+  localStorage.setItem('galactic_reader_width', preset);
+}
+
+function cycleReaderWidth() {
+  const currentIdx = WIDTH_PRESETS.indexOf(currentWidthPreset);
+  const nextPreset = WIDTH_PRESETS[(currentIdx + 1) % WIDTH_PRESETS.length];
+  applyReaderWidth(nextPreset);
+
+  const labels = {
+    normal: 'Standard Width (740px)',
+    compact: 'Compact Width (580px)',
+    wide: 'Wide Reading (960px)',
+    full: 'Full Screen (100%)'
+  };
+  showToast(`📐 ${labels[nextPreset] || nextPreset}`);
+
+  if (currentMode === 'webtoon') {
+    // Refresh visible canvas scaling
+    renderedPages.clear();
+    const wrappers = document.querySelectorAll('.webtoon-page-wrapper');
+    wrappers.forEach(el => {
+      const pNum = parseInt(el.getAttribute('data-page-num'));
+      const rect = el.getBoundingClientRect();
+      if (rect.top < window.innerHeight + 600 && rect.bottom > -600) {
+        renderCanvasPage(pNum);
+      }
+    });
+  }
+}
 
 // =========================================================
 // ⚙️ Setup UI Event Listeners
 // =========================================================
 function setupEventListeners() {
+  // Width Toggle for PC
+  const btnWidthToggle = document.getElementById('btnWidthToggle');
+  if (btnWidthToggle) {
+    btnWidthToggle.addEventListener('click', cycleReaderWidth);
+  }
+
   // Mode Switchers
   const btnWebtoon = document.getElementById('btnModeWebtoon');
   const btnPage = document.getElementById('btnModePage');
@@ -104,6 +148,8 @@ function setupEventListeners() {
     } else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
       if (currentMode === 'page') changeFlipPage(-1);
       else goToPrevChapter();
+    } else if (e.key === 'w' || e.key === 'W') {
+      cycleReaderWidth();
     } else if (e.key === 'f' || e.key === 'F') {
       toggleFullscreen();
     } else if (e.key === 'b' || e.key === 'B') {
@@ -254,15 +300,15 @@ function setupPageIntersectionObserver() {
         // Update visible page indicator
         updatePageIndicator(pageNum);
 
-        // Render page canvas if not already rendered
+        // Pre-render page canvas smoothly before scroll
         if (!renderedPages.has(pageNum)) {
           renderCanvasPage(pageNum);
         }
       }
     });
   }, {
-    rootMargin: '400px 0px 400px 0px', // Pre-render 400px before scrolling into view
-    threshold: 0.1
+    rootMargin: '1000px 0px 1000px 0px', // Pre-render 1000px ahead for instant buffer
+    threshold: 0.01
   });
 
   document.querySelectorAll('.webtoon-page-wrapper').forEach(el => observer.observe(el));
@@ -275,13 +321,25 @@ async function renderCanvasPage(pageNum) {
   try {
     const page = await pdfDoc.getPage(pageNum);
     const canvas = document.getElementById(`canvas-page-${pageNum}`);
+    const wrapper = document.getElementById(`page-wrap-${pageNum}`);
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
-    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 800;
+    const container = document.getElementById('webtoonContainer');
+
+    // Bound viewport to container width on PC (prevents 4K stretching and slowness)
+    const targetWidth = container ? Math.min(container.clientWidth || 740, 1000) : Math.min(window.innerWidth || 740, 740);
     const unscaledViewport = page.getViewport({ scale: 1 });
-    const dpr = Math.min(window.devicePixelRatio || 1, 2); // Crisp retina rendering
-    const scale = (viewportWidth / unscaledViewport.width) * dpr;
+
+    // Set wrapper aspect-ratio to prevent layout shifts
+    if (wrapper && unscaledViewport.width && unscaledViewport.height) {
+      const aspectRatio = unscaledViewport.height / unscaledViewport.width;
+      wrapper.style.minHeight = `${Math.round(targetWidth * aspectRatio)}px`;
+    }
+
+    // High performance DPR capped at 1.75 for 3x faster rendering with retina sharpness
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+    const scale = (targetWidth / unscaledViewport.width) * dpr;
     const viewport = page.getViewport({ scale: scale });
 
     canvas.width = viewport.width;
@@ -293,6 +351,9 @@ async function renderCanvasPage(pageNum) {
       canvasContext: ctx,
       viewport: viewport
     }).promise;
+
+    // Reset placeholder minHeight once rendered
+    if (wrapper) wrapper.style.minHeight = 'auto';
 
   } catch (err) {
     console.error(`Failed to render page ${pageNum}:`, err);

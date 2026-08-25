@@ -242,21 +242,50 @@
 /* Webtoon Continuous Vertical Mode */
 .webtoon-scroll-view {
   width: 100%;
-  max-width: 100%;
+  max-width: 740px; /* Default optimal PC reading width */
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
+  background: #000;
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.9), 0 0 20px rgba(168, 85, 247, 0.05);
+  transition: max-width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* User-Configurable Width Presets for PC / Desktop */
+body[data-reader-width="compact"] .webtoon-scroll-view {
+  max-width: 580px;
+}
+body[data-reader-width="normal"] .webtoon-scroll-view {
+  max-width: 740px;
+}
+body[data-reader-width="wide"] .webtoon-scroll-view {
+  max-width: 960px;
+}
+body[data-reader-width="full"] .webtoon-scroll-view {
+  max-width: 100%;
+  box-shadow: none;
+}
+
+@media (max-width: 768px) {
+  .webtoon-scroll-view {
+    max-width: 100% !important;
+    box-shadow: none;
+  }
 }
 
 .webtoon-page-wrapper {
   width: 100%;
+  max-width: 100%;
   display: flex;
   justify-content: center;
+  align-items: center;
   margin: 0;
   padding: 0;
   line-height: 0;
   position: relative;
+  background-color: #0b0c13;
+  overflow: hidden;
 }
 
 .webtoon-page-canvas {
@@ -265,6 +294,7 @@
   height: auto;
   display: block;
   image-rendering: -webkit-optimize-contrast;
+  object-fit: contain;
 }
 
 /* Page Flip Mode */
