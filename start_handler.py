@@ -1,10 +1,14 @@
 import random
 import json
+import html
+import logging
 from datetime import datetime
 from pytz import timezone
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from telegram.ext import CallbackContext
 from config import LOG_CHANNEL_ID, WEB_APP_URL
+
+logger = logging.getLogger(__name__)
 
 # Load quotes and facts
 with open("anime_quotes.json", encoding="utf-8") as f:
@@ -58,6 +62,31 @@ def start_cmd(update: Update, context: CallbackContext):
         elif arg in ["fav", "favorites"]:
             from user_lists_handler import fav_cmd
             return fav_cmd(update, context)
+        elif arg.startswith("read_") or arg.startswith("reader_"):
+            try:
+                parts = arg.split("_")
+                cid = int(parts[1])
+                ch = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 1
+                from database import get_manga_by_id
+                manga = get_manga_by_id(cid)
+                name = html.escape(manga.get("name", "Manga").title()) if manga else "Manga"
+                channel_link = (manga.get("channel_link") or f"https://t.me/c/{str(cid)[4:]}/1") if manga else "https://t.me"
+                read_btn = InlineKeyboardMarkup([
+                    [InlineKeyboardButton(f"📖 Launch Web Reader (Ch. {ch})", web_app=WebAppInfo(url=f"{WEB_APP_URL}/reader?channel_id={cid}&ch={ch}"))],
+                    [
+                        InlineKeyboardButton("🛸 Web Hub", web_app=WebAppInfo(url=f"{WEB_APP_URL}/webhub")),
+                        InlineKeyboardButton("📖 Channel Post", url=channel_link)
+                    ]
+                ])
+                text = (
+                    f"📖 <b>{name} — Chapter {ch}</b>\n\n"
+                    f"<i>Tap below to open the Web Reader Mini App directly inside Telegram:</i> 👇"
+                )
+                msg = update.effective_message or update.message
+                if msg:
+                    return msg.reply_text(text, parse_mode="HTML", reply_markup=read_btn)
+            except Exception as e:
+                logger.error(f"Error handling read start link: {e}")
         elif arg.startswith("manga_"):
             try:
                 cid = int(arg.replace("manga_", ""))

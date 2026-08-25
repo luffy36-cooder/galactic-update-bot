@@ -114,11 +114,11 @@ def inline_query(update, context):
 
             hub_keyboard = InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("🌌 Launch Web Hub", url=f"{WEB_APP_URL}/webhub"),
-                    InlineKeyboardButton("📚 Web Catalog", url=f"{WEB_APP_URL}/web")
+                    InlineKeyboardButton("🌌 Launch Web Hub", url=f"https://t.me/{bot_username}?start=webhub"),
+                    InlineKeyboardButton("📚 Web Catalog", url=f"https://t.me/{bot_username}?start=web")
                 ],
                 [
-                    InlineKeyboardButton("🛸 Open Bot Hub", url=f"https://t.me/{bot_username}?start=webhub"),
+                    InlineKeyboardButton("🛸 Open Bot Hub", url=f"https://t.me/{bot_username}?start=hub"),
                     InlineKeyboardButton("🔍 Search Manga", url=f"https://t.me/{bot_username}?start=search")
                 ]
             ])
@@ -323,10 +323,10 @@ def inline_query(update, context):
             buttons = [
                 [
                     InlineKeyboardButton("📖 Read in Channel", url=channel_link),
-                    InlineKeyboardButton("🌐 Web Reader", url=f"{WEB_APP_URL}/reader?channel_id={channel_id}&ch=1")
+                    InlineKeyboardButton("🌐 Web Reader", url=f"https://t.me/{bot_username}?start=read_{channel_id}_1")
                 ],
                 [
-                    InlineKeyboardButton("🛸 Web Hub", url=f"{WEB_APP_URL}/webhub"),
+                    InlineKeyboardButton("🛸 Web Hub", url=f"https://t.me/{bot_username}?start=webhub"),
                     InlineKeyboardButton("📌 View in Bot", url=f"https://t.me/{bot_username}?start=manga_{channel_id}")
                 ]
             ]
