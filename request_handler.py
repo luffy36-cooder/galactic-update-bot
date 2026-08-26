@@ -424,11 +424,11 @@ def handle_request_callbacks(update: Update, context: CallbackContext):
 
 
 # =========================================================
-# 💬 Admin Custom Reply Message Receiver
+# 💬 Admin Custom Reply Message Receiver (Text & Photos)
 # =========================================================
 def handle_admin_reply_text(update: Update, context: CallbackContext) -> bool:
-    """Captures admin's text when in waiting_admin_reply state and sends as DM."""
-    if not update.message or not update.message.text:
+    """Captures admin's text or photo when in waiting_admin_reply state and sends as DM."""
+    if not update.message:
         return False
 
     admin_user = update.effective_user
@@ -436,7 +436,7 @@ def handle_admin_reply_text(update: Update, context: CallbackContext) -> bool:
         return False
 
     state = waiting_admin_reply.pop(admin_user.id)
-    text = update.message.text.strip()
+    text = (update.message.text or update.message.caption or "").strip()
 
     if text.lower() == "/cancel":
         update.message.reply_text("❌ Action cancelled.")
@@ -476,17 +476,39 @@ def handle_admin_reply_text(update: Update, context: CallbackContext) -> bool:
                 f"💬 <b>Reason:</b> {html.escape(text)}\n\n"
                 f"<i>Feel free to request another title anytime! 💕</i>"
             )
-        else:  # Direct message
-            dm_text = (
-                f"💬 <b>Message from Bot Admin regarding '{html.escape(m_name)}':</b>\n\n"
-                f"{html.escape(text)}"
-            )
+        else:  # Direct message / Note
+            if text:
+                dm_text = (
+                    f"💬 <b>Message from Bot Admin regarding '{html.escape(m_name)}':</b>\n\n"
+                    f"{html.escape(text)}"
+                )
+            else:
+                dm_text = f"💬 <b>Message from Bot Admin regarding '{html.escape(m_name)}'</b>"
 
-        context.bot.send_message(chat_id=target_uid, text=dm_text, parse_mode="HTML")
+        # 🖼️ If admin sent a photo, deliver photo with caption!
+        if update.message.photo:
+            photo_file_id = update.message.photo[-1].file_id
+            context.bot.send_photo(
+                chat_id=target_uid,
+                photo=photo_file_id,
+                caption=dm_text,
+                parse_mode="HTML"
+            )
+        elif update.message.document:
+            doc_file_id = update.message.document.file_id
+            context.bot.send_document(
+                chat_id=target_uid,
+                document=doc_file_id,
+                caption=dm_text,
+                parse_mode="HTML"
+            )
+        else:
+            context.bot.send_message(chat_id=target_uid, text=dm_text, parse_mode="HTML")
+
         update.message.reply_text(
             f"✅ <b>Message Sent!</b>\n\n"
             f"Delivered to user <code>{target_uid}</code> successfully:\n"
-            f"<i>{html.escape(text)}</i>",
+            f"<i>{html.escape(text or 'Photo attached')}</i>",
             parse_mode="HTML"
         )
     except Exception as e:

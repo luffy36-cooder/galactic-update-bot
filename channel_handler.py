@@ -214,15 +214,23 @@ def add_channel_cmd(update: Update, context: CallbackContext):
 
 
 # -------------------------
-# Handle image upload after /add
+# Handle image upload after /add or during DM reply
 # -------------------------
 def handle_image(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if user_id not in waiting_for_image:
+    if not update.message or not update.message.photo:
         return
 
-    if not update.message.photo:
-        return update.message.reply_text("❌ Please send a valid photo.")
+    # 1. Check if admin is currently replying to a user DM prompt
+    try:
+        from request_handler import handle_admin_reply_text
+        if handle_admin_reply_text(update, context):
+            return
+    except Exception as e:
+        logger.error(f"Error in handle_admin_reply_text from handle_image: {e}")
+
+    if user_id not in waiting_for_image:
+        return
 
     channel_id = waiting_for_image.pop(user_id)
     photo = update.message.photo[-1]
