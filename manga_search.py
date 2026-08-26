@@ -32,6 +32,14 @@ def search_by_text_if_enabled(update: Update, context: CallbackContext):
     if not update.message or not update.message.text:
         return
 
+    # 1. First priority: Check if admin is currently in interactive DM reply state
+    try:
+        from request_handler import handle_admin_reply_text
+        if handle_admin_reply_text(update, context):
+            return
+    except Exception as e:
+        logger.error(f"Error in handle_admin_reply_text: {e}")
+
     text = update.message.text.strip()
     if not text or text.startswith("/"):
         return

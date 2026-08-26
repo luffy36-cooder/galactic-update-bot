@@ -181,10 +181,14 @@ def main():
     dp.add_handler(CommandHandler("dmbroadcast", dmbroadcast_cmd))
     dp.add_handler(CommandHandler("delete_dmbroadcast", delete_dmbroadcast_cmd))
 
-    # 📨 Manga Requests
+    # 📨 Manga Requests & Direct Messaging
     dp.add_handler(CommandHandler("request", request_manga))
     dp.add_handler(CommandHandler("requestlist", request_list))
     dp.add_handler(CommandHandler("replyreq", replyreq_cmd))
+    dp.add_handler(CommandHandler("dm", replyreq_cmd))
+    dp.add_handler(CommandHandler("reply", replyreq_cmd))
+    dp.add_handler(CommandHandler("senddm", replyreq_cmd))
+    dp.add_handler(CommandHandler("msg", replyreq_cmd))
 
     # 📚 User List Commands
     dp.add_handler(CommandHandler("myhub", myhub_cmd))

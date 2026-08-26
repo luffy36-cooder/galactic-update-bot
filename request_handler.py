@@ -432,7 +432,7 @@ def handle_admin_reply_text(update: Update, context: CallbackContext) -> bool:
         return False
 
     admin_user = update.effective_user
-    if admin_user.id not in waiting_admin_reply:
+    if not admin_user or admin_user.id not in waiting_admin_reply:
         return False
 
     state = waiting_admin_reply.pop(admin_user.id)
@@ -443,15 +443,19 @@ def handle_admin_reply_text(update: Update, context: CallbackContext) -> bool:
         return True
 
     target_uid = state["target_user_id"]
-    req_id_str = state["req_id"]
-    action = state["action"]
+    req_id_str = state.get("req_id")
+    action = state.get("action")
 
     req_doc = request_col.find_one({"_id": ObjectId(req_id_str)}) if req_id_str else None
     m_name = req_doc.get("manga_name", "Manga") if req_doc else "Manga"
 
     try:
         if action == "req_customacc":
-            request_col.update_one({"_id": ObjectId(req_id_str)}, {"$set": {"status": "completed", "completed_by": admin_user.id, "completed_by_name": admin_user.first_name, "admin_note": text}})
+            if req_id_str:
+                request_col.update_one(
+                    {"_id": ObjectId(req_id_str)},
+                    {"$set": {"status": "completed", "completed_by": admin_user.id, "completed_by_name": admin_user.first_name, "admin_note": text}}
+                )
             _sync_admin_messages(context, req_doc, admin_user, "✅ <b>Accepted (Custom Note)</b>")
             dm_text = (
                 f"🎉 <b>Your Manga Request Was Accepted!</b> 🌌\n\n"
@@ -460,7 +464,11 @@ def handle_admin_reply_text(update: Update, context: CallbackContext) -> bool:
                 f"<i>Happy reading! 💕</i>"
             )
         elif action == "req_customdec":
-            request_col.update_one({"_id": ObjectId(req_id_str)}, {"$set": {"status": "denied", "denied_by": admin_user.id, "denied_by_name": admin_user.first_name, "reason": text}})
+            if req_id_str:
+                request_col.update_one(
+                    {"_id": ObjectId(req_id_str)},
+                    {"$set": {"status": "denied", "denied_by": admin_user.id, "denied_by_name": admin_user.first_name, "reason": text}}
+                )
             _sync_admin_messages(context, req_doc, admin_user, "❌ <b>Declined</b>")
             dm_text = (
                 f"❌ <b>Your Manga Request was Declined</b>\n\n"
@@ -475,7 +483,12 @@ def handle_admin_reply_text(update: Update, context: CallbackContext) -> bool:
             )
 
         context.bot.send_message(chat_id=target_uid, text=dm_text, parse_mode="HTML")
-        update.message.reply_text(f"✅ <b>Message Sent!</b> Delivered to user <code>{target_uid}</code> successfully!", parse_mode="HTML")
+        update.message.reply_text(
+            f"✅ <b>Message Sent!</b>\n\n"
+            f"Delivered to user <code>{target_uid}</code> successfully:\n"
+            f"<i>{html.escape(text)}</i>",
+            parse_mode="HTML"
+        )
     except Exception as e:
         update.message.reply_text(f"❌ Failed to deliver DM to user {target_uid}: {e}")
 
@@ -483,25 +496,68 @@ def handle_admin_reply_text(update: Update, context: CallbackContext) -> bool:
 
 
 # =========================================================
-# 💬 /replyreq <user_id> <message> (Command alternative)
+# 💬 /reply /dm /replyreq <user_id> <message> (Command alternative)
 # =========================================================
 def replyreq_cmd(update: Update, context: CallbackContext):
-    if not is_admin(update.effective_user.id):
+    """Sends a direct message to a user either by specifying User ID or by replying to a card/message."""
+    admin_user = update.effective_user
+    if not is_admin(admin_user.id):
         return update.message.reply_text("🚫 Sudo only.")
 
-    if len(context.args) < 2:
-        return update.message.reply_text("📌 Usage: <code>/replyreq <user_id> <your message></code>", parse_mode="HTML")
+    target_uid = None
+    msg_text = None
+
+    # Check 1: Did admin reply to a message?
+    reply_msg = update.message.reply_to_message
+    if reply_msg:
+        # 1a. Try forward_from
+        if reply_msg.forward_from:
+            target_uid = reply_msg.forward_from.id
+        # 1b. Try extracting User ID from text / caption
+        elif reply_msg.text or reply_msg.caption:
+            content = reply_msg.text or reply_msg.caption or ""
+            match = re.search(r'(?:User ID|🆔)\s*:?\s*(?:<code>)?\s*(\d{5,})\s*(?:</code>)?', content, re.IGNORECASE)
+            if match:
+                target_uid = int(match.group(1))
+        # 1c. If sent by normal user (and not the bot)
+        if not target_uid and reply_msg.from_user and reply_msg.from_user.id != context.bot.id:
+            target_uid = reply_msg.from_user.id
+
+        if context.args:
+            msg_text = " ".join(context.args).strip()
+
+    # Check 2: First argument is User ID
+    if not target_uid:
+        if len(context.args) >= 2 and context.args[0].isdigit():
+            target_uid = int(context.args[0])
+            msg_text = " ".join(context.args[1:]).strip()
+        elif len(context.args) >= 1 and context.args[0].isdigit():
+            target_uid = int(context.args[0])
+
+    if not target_uid or not msg_text:
+        return update.message.reply_text(
+            "📌 <b>How to Send a Direct Message to a User:</b>\n\n"
+            "<b>Option 1: Direct Command</b>\n"
+            "👉 <code>/dm &lt;user_id&gt; &lt;your message&gt;</code>\n"
+            "<i>Example:</i> <code>/dm 5803186098 Martial Peak - read here https://t.me/Martial_peak2</code>\n\n"
+            "<b>Option 2: Reply to Request Card</b>\n"
+            "👉 Reply to any request alert or message with:\n"
+            "<code>/reply &lt;your message&gt;</code> or <code>/dm &lt;your message&gt;</code>",
+            parse_mode="HTML"
+        )
 
     try:
-        target_uid = int(context.args[0])
-        msg_text = " ".join(context.args[1:]).strip()
-
         context.bot.send_message(
             chat_id=target_uid,
             text=f"💬 <b>Message from Galactic Bot Admin:</b>\n\n{html.escape(msg_text)}",
             parse_mode="HTML"
         )
-        update.message.reply_text(f"✅ Message sent to <code>{target_uid}</code>!", parse_mode="HTML")
+        update.message.reply_text(
+            f"✅ <b>Message Delivered!</b>\n\n"
+            f"🆔 <b>Delivered to:</b> <code>{target_uid}</code>\n"
+            f"💬 <b>Content:</b> <i>{html.escape(msg_text)}</i>",
+            parse_mode="HTML"
+        )
     except Exception as e:
-        update.message.reply_text(f"❌ Failed to send message: {e}")
+        update.message.reply_text(f"❌ Failed to send DM to user <code>{target_uid}</code>: {e}", parse_mode="HTML")
 
