@@ -353,6 +353,11 @@ body[data-reader-width="full"] .webtoon-scroll-view {
   position: relative;
   background-color: #0b0c13;
   overflow: hidden;
+  content-visibility: auto;
+  contain-intrinsic-size: 740px 1000px;
+  contain: paint layout style;
+  transform: translateZ(0);
+  will-change: auto;
 }
 
 .webtoon-page-canvas {
@@ -361,7 +366,10 @@ body[data-reader-width="full"] .webtoon-scroll-view {
   height: auto;
   display: block;
   image-rendering: -webkit-optimize-contrast;
+  image-rendering: auto;
   object-fit: contain;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 /* Page Flip Mode */

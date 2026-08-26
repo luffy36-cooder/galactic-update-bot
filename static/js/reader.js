@@ -469,16 +469,21 @@ function renderWebtoonMode() {
   setupPageIntersectionObserver();
   updatePageIndicator(1);
 
-  // Immediately render the first 3 pages
-  queuePageRender(1);
-  if (totalPages >= 2) queuePageRender(2);
-  if (totalPages >= 3) queuePageRender(3);
+  // Immediately render initial pages (5 on PC/Desktop, 3 on Mobile)
+  const isDesktop = window.innerWidth >= 768;
+  const initialPagesCount = isDesktop ? 5 : 3;
+  for (let p = 1; p <= Math.min(totalPages, initialPagesCount); p++) {
+    queuePageRender(p);
+  }
 }
 
 function setupPageIntersectionObserver() {
   if (webtoonObserver) {
     webtoonObserver.disconnect();
   }
+
+  const isDesktop = window.innerWidth >= 768;
+  const marginStr = isDesktop ? '3200px 0px 3200px 0px' : '2000px 0px 2000px 0px';
 
   webtoonObserver = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
@@ -492,8 +497,9 @@ function setupPageIntersectionObserver() {
           queuePageRender(pageNum);
         }
 
-        // Aggressively pre-render upcoming pages
-        for (let offset = 1; offset <= 3; offset++) {
+        // Aggressively pre-render upcoming pages (4 ahead on PC, 3 on mobile)
+        const lookahead = isDesktop ? 4 : 3;
+        for (let offset = 1; offset <= lookahead; offset++) {
           const nextP = pageNum + offset;
           if (nextP <= totalPages && !renderedPages.has(nextP)) {
             queuePageRender(nextP);
@@ -502,7 +508,7 @@ function setupPageIntersectionObserver() {
       }
     });
   }, {
-    rootMargin: '1800px 0px 1800px 0px', // Buffer 1800px ahead
+    rootMargin: marginStr, // Dynamic buffer ahead of scrolling
     threshold: 0.01
   });
 
@@ -511,11 +517,14 @@ function setupPageIntersectionObserver() {
 
 function sweepVisiblePages() {
   const wrappers = document.querySelectorAll('.webtoon-page-wrapper');
+  const isDesktop = window.innerWidth >= 768;
+  const bufferHeight = isDesktop ? 2500 : 1600;
+
   wrappers.forEach(el => {
     const pNum = parseInt(el.getAttribute('data-page-num'));
     if (!renderedPages.has(pNum) && !renderingPages.has(pNum)) {
       const rect = el.getBoundingClientRect();
-      if (rect.top < window.innerHeight + 1600 && rect.bottom > -1600) {
+      if (rect.top < window.innerHeight + bufferHeight && rect.bottom > -bufferHeight) {
         queuePageRender(pNum);
       }
     }
@@ -570,8 +579,10 @@ async function renderCanvasPage(pageNum) {
     const computedHeight = Math.round(targetWidth * aspectRatio);
     pageHeights.set(pageNum, computedHeight);
 
-    // Capped DPR (max 1.5) for optimal Retina sharpness, ultra-fast painting & low VRAM
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    // ⚡ Hardware-Optimized DPR Scaling: 1.05x on Desktop (PC) & 1.25x on Mobile for lightning-fast rendering
+    const isDesktop = window.innerWidth >= 768;
+    const maxDpr = isDesktop ? 1.05 : 1.25;
+    const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
     const scale = (targetWidth / unscaledViewport.width) * dpr;
     const viewport = page.getViewport({ scale: scale });
 
@@ -581,8 +592,8 @@ async function renderCanvasPage(pageNum) {
     canvas.style.width = '100%';
     canvas.style.height = 'auto';
 
-    // Standard 2D context (without desynchronized to eliminate blank screen bug)
-    const ctx = canvas.getContext('2d', { alpha: false });
+    // Standard 2D context with hardware acceleration
+    const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: false });
     // Fill canvas background to prevent black/transparent holes
     ctx.fillStyle = '#11121d';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
