@@ -156,7 +156,7 @@ def main():
     dp.add_handler(CommandHandler("recommend", recommend_cmd))
     dp.add_handler(CommandHandler("leaderboard", leaderboard_cmd))
     dp.add_handler(CommandHandler("toprated", toprated_cmd))
-    dp.add_handler(CommandHandler("manga", search_by_command))
+    dp.add_handler(CommandHandler(["manga", "manhwa", "manhua"], search_by_command))
 
     # 🛠 Admin Commands
     dp.add_handler(CommandHandler("adminhelp", adminhelp_cmd))

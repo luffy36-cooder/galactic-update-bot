@@ -1,3 +1,4 @@
+import re
 import html
 import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
@@ -15,11 +16,16 @@ logger = logging.getLogger(__name__)
 
 
 # ========================
-# ✅ /manga command handler
+# ✅ /manga, /manhwa, /manhua command handler
 # ========================
 def search_by_command(update: Update, context: CallbackContext):
     if not context.args:
-        update.message.reply_text("🔍 Usage: /manga <name>")
+        cmd_name = "manga"
+        if update.message and update.message.text:
+            raw_cmd = update.message.text.split()[0].lstrip("/").split("@")[0].lower()
+            if raw_cmd in ["manga", "manhwa", "manhua"]:
+                cmd_name = raw_cmd
+        update.message.reply_text(f"🔍 Usage: <code>/{cmd_name} &lt;name&gt;</code>", parse_mode="HTML")
         return
     query = " ".join(context.args).strip()
     send_search_result(update, context, query)
@@ -44,17 +50,27 @@ def search_by_text_if_enabled(update: Update, context: CallbackContext):
     if not text or text.startswith("/"):
         return
 
-    # Route request commands directly to request_handler
+    # 2. Route request commands directly to request_handler
     text_lower = text.lower()
     if text_lower.startswith("#request") or text_lower.startswith("request"):
         from request_handler import request_manga
         return request_manga(update, context)
 
+    # 3. Explicit prefix search triggers: #manga, #manhwa, #manhua, manga, manhwa, manhua
+    search_prefix_match = re.match(r'^(?:#?(?:manga|manhwa|manhua))\s*[:\-]?\s*(.*)$', text, re.IGNORECASE)
+    if search_prefix_match:
+        extracted_query = search_prefix_match.group(1).strip()
+        if extracted_query:
+            return send_search_result(update, context, extracted_query)
+        else:
+            update.message.reply_text("🔍 Usage: <code>#manga &lt;name&gt;</code> or <code>/manga &lt;name&gt;</code>", parse_mode="HTML")
+            return
+
     chat = update.effective_chat
     if not chat:
         return
 
-    # In groups, check if text mode is enabled
+    # 4. In groups, check if text mode is enabled
     if chat.type in ["group", "supergroup"]:
         mode = get_group_mode(chat.id)
         if mode != "text":
