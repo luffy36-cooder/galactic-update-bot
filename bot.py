@@ -300,7 +300,11 @@ def main():
         logger.warning(f"Could not update Telegram Bot Command Menu: {e}")
 
     logger.info("🤖 Galactic Manga Bot initialized with PTB v13.15 & 8 worker threads! 🛸🚀")
-    updater.start_polling(drop_pending_updates=True)
+    try:
+        updater.bot.delete_webhook(drop_pending_updates=False)
+    except Exception as e:
+        logger.debug(f"delete_webhook notice: {e}")
+    updater.start_polling(drop_pending_updates=False)
     updater.idle()
 
 
